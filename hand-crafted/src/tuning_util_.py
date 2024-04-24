@@ -9,15 +9,13 @@ import PIL
 import numpy as np
 import torchvision
 from torchvision import transforms
+from torchvision.datasets import CIFAR10 as PyTorchCIFAR10
+from torchvision.datasets import CIFAR100 as PyTorchCIFAR100
 import torchvision.datasets as dset
 import random
 import os
 import shutil
-from torch.utils.data import DataLoader, Dataset
-from PIL import Image
-from pycocotools.coco import COCO
 
-from open_clip import tokenize
 def assign_learning_rate(param_group, new_lr):
     param_group["lr"] = new_lr
 
@@ -48,120 +46,152 @@ def accuracy(output, target, topk=(1,)):
     return [float(correct[:k].reshape(-1).float().sum(0, keepdim=True).cpu().numpy()) for k in topk]
 
 
+#cifar10_classnames = ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
+class CIFAR10:
+    def __init__(self, preprocess_train, preprocess_test,
+                 batch_size=128,
+                 num_workers=16,
+                 classnames=None):
 
-    
+        self.train_dataset = PyTorchCIFAR10(
+            root=os.path.expanduser("~/.cache"), download=True, train=True, transform=preprocess_train
+        )
+
+        self.train_loader = torch.utils.data.DataLoader(
+            self.train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers
+        )
+
+        self.test_dataset = PyTorchCIFAR10(
+            root=os.path.expanduser("~/.cache"), download=True, train=False, transform=preprocess_test
+        )
+
+        self.test_loader = torch.utils.data.DataLoader(
+            self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+        )
+
+        self.classnames = self.test_dataset.classes
+        
+
+class LSUN:
+    def __init__(self, preprocess_test,
+                 batch_size=128,
+                 num_workers=16,
+                 classnames=None):
+        data_root = './data/LSUN'
+        self.test_dataset = dset.ImageFolder(root=data_root, transform=preprocess_test)
+        self.test_loader = torch.utils.data.DataLoader(
+            self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+        )
+        self.classnames = self.test_dataset.classes
         
 class Places:
     def __init__(self, preprocess_test,
                  batch_size=128,
                  num_workers=16,
                  classnames=None):
-        data_root = '/data/kangyuzhu/ood_data/Places'
+        data_root = '/home/hwangfd/OOD_DATA/Places'
         self.test_dataset = dset.ImageFolder(root=data_root, transform=preprocess_test)
         self.test_loader = torch.utils.data.DataLoader(
             self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
         )
         self.classnames = self.test_dataset.classes
 
-
+class OpenImage:
+    def __init__(self, preprocess_test,
+                 batch_size=128,
+                 num_workers=16,
+                 classnames=None):
+        data_root = '/home/hwangfd/OOD_DATA/OpenImage'
+        self.test_dataset = dset.ImageFolder(root=data_root, transform=preprocess_test)
+        self.test_loader = torch.utils.data.DataLoader(
+            self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+        )
+        self.classnames = self.test_dataset.classes
+    
+class ImageNet_O:
+    def __init__(self, preprocess_test,
+                 batch_size=128,
+                 num_workers=16,
+                 classnames=None):
+        data_root = '/home/hwangfd/OOD_DATA/imagenet-o'
+        self.test_dataset = dset.ImageFolder(root=data_root, transform=preprocess_test)
+        self.test_loader = torch.utils.data.DataLoader(
+            self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+        )
+        self.classnames = self.test_dataset.classes
+        
+        
 class Textures:
     def __init__(self, preprocess_test,
                  batch_size=128,
                  num_workers=16,
                  classnames=None):
-        data_root = '/data/kangyuzhu/ood_data/Textures/images'
+        data_root = '/home/hwangfd/OOD_DATA/Textures'
         self.test_dataset = dset.ImageFolder(root=data_root, transform=preprocess_test)
         self.test_loader = torch.utils.data.DataLoader(
             self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
         )
         self.classnames = self.test_dataset.classes
-class COCODataset(Dataset):
-    def __init__(self, img_dir,annotation_file,is_train=False, transform=None):
-        self.coco = COCO(annotation_file)
-        self.transform = transform
-        self.data = []
-        
-        self.is_train=is_train
-        
-        self.img_folder_dir=img_dir
-        self.category_dict={cat_id: cat['name'] for cat_id, cat in self.coco.cats.items()}
-        self.classes=['person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light', 'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe', 'backpack', 'umbrella', 'handbag', 'tie', 'suitcase', 'frisbee', 'skis', 'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard', 'tennis racket', 'bottle']
-        self.texts=[]
-        for img_id in self.coco.imgs:
-            img_info = self.coco.loadImgs(img_id)[0]
-            annotations = self.coco.loadAnns(self.coco.getAnnIds(imgIds=img_id))
-            for annotation in annotations:
-                bbox = annotation['bbox']
-                category_name = self.category_dict[annotation['category_id']]
-                text = f'a photo of {category_name}'
-                self.data.append((img_info['file_name'], bbox, text,annotation['category_id']))
-                self.texts.append(text)
-        # self.classes=list(set(self.texts))
-        # print(self.classes)
-        
-            
 
-    def __getitem__(self, index):
-        file_name, bbox, text,class_id = self.data[index]
-        
-        image=Image.open(f'{self.img_folder_dir}/{file_name}')
-        
-        cropped_image = image.crop((bbox[0], bbox[1], bbox[0] + bbox[2], bbox[1] + bbox[3]))
-        if self.is_train:
-            if self.transform:
-                cropped_image = self.transform(cropped_image)
-                text=tokenize(text)
-            return cropped_image, text
-        else:
-            if self.transform:
-                cropped_image = self.transform(cropped_image)
-                # text=tokenize(text)
-            return cropped_image, class_id
-
-    
-
-    def __len__(self):
-        return len(self.data)
-    
-class COCO_val:
-    def __init__(self, img_dir,annotation_file,preprocess_test,
-                 batch_size=128,
-                 num_workers=16,
-                 classnames=None,
-                 OOD=False):
-        # img_dir='/data/kangyuzhu/coco_val/val2017',
-        # annotation_file='/data/kangyuzhu/coco_val/annotations/instances_val2017.json',
-        
-        self.test_dataset = COCODataset(img_dir=img_dir,annotation_file=annotation_file,transform=preprocess_test,)
-        self.test_loader = torch.utils.data.DataLoader(
-            self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
-        )
-        if not OOD:
-            self.classnames = self.test_dataset.classes
-        else:
-            self.classnames=None
 class iNaturalist:
     def __init__(self, preprocess_test,
                  batch_size=128,
                  num_workers=16,
                  classnames=None):
-        data_root = '/data/kangyuzhu/ood_data/iNaturalist'
+        data_root = '/home/hwangfd/OOD_DATA/iNaturalist'
+        self.test_dataset = dset.ImageFolder(root=data_root, transform=preprocess_test)
+        self.test_loader = torch.utils.data.DataLoader(
+            self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+        )
+        self.classnames = self.test_dataset.classes
+        
+class SUN:
+    def __init__(self, preprocess_test,
+                 batch_size=128,
+                 num_workers=16,
+                 classnames=None):
+        data_root = '/home/hwangfd/OOD_DATA/SUN'
+        self.test_dataset = dset.ImageFolder(root=data_root, transform=preprocess_test)
+        self.test_loader = torch.utils.data.DataLoader(
+            self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+        )
+        self.classnames = self.test_dataset.classes
+        
+class ImageNet_R:
+    def __init__(self, preprocess_test,
+                 batch_size=128,
+                 num_workers=16,
+                 classnames=None):
+        data_root = './data/ImageNet_R'
         self.test_dataset = dset.ImageFolder(root=data_root, transform=preprocess_test)
         self.test_loader = torch.utils.data.DataLoader(
             self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
         )
         self.classnames = self.test_dataset.classes
 
-class SUN:
-    def __init__(self, preprocess_test,
+        
+class CIFAR100:
+    def __init__(self, preprocess_train, preprocess_test,
                  batch_size=128,
                  num_workers=16,
                  classnames=None):
-        data_root = '/data/kangyuzhu/ood_data/SUN'
-        self.test_dataset = dset.ImageFolder(root=data_root, transform=preprocess_test)
+
+        self.train_dataset = PyTorchCIFAR100(
+            root=os.path.expanduser("~/.cache"), download=True, train=True, transform=preprocess_train
+        )
+
+        self.train_loader = torch.utils.data.DataLoader(
+            self.train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers
+        )
+
+        self.test_dataset = PyTorchCIFAR100(
+            root=os.path.expanduser("~/.cache"), download=True, train=False, transform=preprocess_test
+        )
+
         self.test_loader = torch.utils.data.DataLoader(
             self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
         )
+
         self.classnames = self.test_dataset.classes
         
         
@@ -179,6 +209,30 @@ def maybe_dictionarize(batch):
 
     return batch
 
+class LabelSmoothing(torch.nn.Module):
+    def __init__(self, smoothing=0.0):
+        super(LabelSmoothing, self).__init__()
+        self.confidence = 1.0 - smoothing
+        self.smoothing = smoothing
+
+    def forward(self, x, target):
+        logprobs = torch.nn.functional.log_softmax(x, dim=-1)
+
+        nll_loss = -logprobs.gather(dim=-1, index=target.unsqueeze(1))
+        nll_loss = nll_loss.squeeze(1)
+        if self.smoothing != 0.0:
+            smooth_loss = -logprobs.mean(dim=-1)
+            loss = self.confidence * nll_loss + self.smoothing * smooth_loss
+        else:
+            loss = self.confidence * nll_loss
+        return loss.mean()
+
+def one_hot(label, num_class):
+    label = label.unsqueeze(1)
+    batch_size = label.size(0)
+    mask = torch.zeros(batch_size, num_class).cuda()
+    one_hot = mask.scatter_(1, label, 1).long()
+    return one_hot
 
 
     
@@ -187,20 +241,18 @@ class ImageNet:
                  batch_size=128,
                  num_workers=16,
                  classnames=None):
-        data_root_train = '/data/kangyuzhu/ood_data/ImageNet_train'
-        # self.train_dataset = dset.ImageFolder(
-        #     root=data_root_train, transform=preprocess_train
-        # )
+        data_root_train = '/home/hwangfd/OOD_DATA/ImageNet_train'
+        self.train_dataset = dset.ImageFolder(root=data_root_train, transform=preprocess_test)
 
-        data_root_test = '/data/kangyuzhu/ILSVRC2012_val'
+        data_root_test = '/home/hwangfd/OOD_DATA/ImageNet_val/images'
         self.test_dataset = dset.ImageFolder(root=data_root_test, transform=preprocess_test)
         
-        # self.train_loader = torch.utils.data.DataLoader(
-        #     self.train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers
-        # )
+        self.train_loader = torch.utils.data.DataLoader(
+            self.train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers
+        )
         
         self.test_loader = torch.utils.data.DataLoader(
-            self.test_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers
+            self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
         )
         self.classnames = ["tench", "goldfish", "great white shark", "tiger shark", "hammerhead shark", "electric ray",
                         "stingray", "rooster", "hen", "ostrich", "brambling", "goldfinch", "house finch", "junco",

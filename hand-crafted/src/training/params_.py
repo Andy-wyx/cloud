@@ -16,7 +16,7 @@ def parse_args():
         "--train-data",
         type=str,
         default=None,
-        help="Path to csv file with training data",
+        help="Path to csv filewith training data",
     )
     parser.add_argument(
         "--val-data",
@@ -24,19 +24,6 @@ def parse_args():
         default=None,
         help="Path to csv file with validation data",
     )
-    parser.add_argument(
-        "--train_ann_file",
-        type=str,
-        default=None,
-        help="Path to csv file with training anno",
-    )
-    parser.add_argument(
-        "--val_ann_file",
-        type=str,
-        default=None,
-        help="Path to csv file with validation anno",
-    )
-    
     parser.add_argument(
         "--train-num-samples",
         type=int,
@@ -51,7 +38,7 @@ def parse_args():
     )
     parser.add_argument(
         "--dataset-type",
-        choices=["webdataset", "csv", "auto","COCO"],
+        choices=["webdataset", "csv", "auto"],
         default="auto",
         help="Which type of dataset to process."
     )
@@ -205,7 +192,7 @@ def parse_args():
         help='Override default image mean value of dataset')
     parser.add_argument(
         '--image-std', type=float, nargs='+', default=None, metavar='STD',
-        help='Override default image std deviation of dataset')
+        help='Override default image std deviation of of dataset')
     parser.add_argument(
         "--grad-checkpointing",
         default=False,
@@ -274,7 +261,7 @@ def parse_args():
         "--copy-codebase",
         default=False,
         action="store_true",
-        help="If true, we copy the entire base on the log directory, and execute from there."
+        help="If true, we copy the entire base on the log diretory, and execute from there."
     )
     parser.add_argument(
         "--horovod",
