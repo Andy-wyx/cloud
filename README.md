@@ -17,14 +17,11 @@ A full version final report can be found here: [Link to PDF](TBD)
 **CLIPN**: 
 * A reproduce of [CLIPN for Zero-Shot OOD Detection: Teaching CLIP to Say No](https://arxiv.org/abs/2308.12213) based on [xmed-lab/CLIPN](https://github.com/xmed-lab/CLIPN))
 
-**RegionCLIPN**: 
-* A reproduce of [RegionCLIP: Region-based Language-Image Pretraining](https://arxiv.org/abs/2112.09106) based on [microsoft/RegionCLIP](https://github.com/microsoft/RegionCLIP). 
 
-
-**Experiments** 
-    * 1
-    * 2
-    * 3
+**Ablation Experiments** 
+    * Transform
+    * Loss
+    * Training strategy
 
 ## Analysis 
 
@@ -33,10 +30,11 @@ See the final report: [Link to PDF](TBD)
 ## Future Work
 
 **Training & Experiments**
-* 1
+* boost the AUROC with hyperparameter tuning
+* Training with Pseudo Labels from RPN
 
 **Algorithms
-* 1
+* 
 
 **Others**
-* 1
+* visualize the outcomes of the object OOD detection model
