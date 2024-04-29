@@ -18,10 +18,11 @@ A full version final report can be found here: [Link to PDF](TBD)
 * A reproduce of [CLIPN for Zero-Shot OOD Detection: Teaching CLIP to Say No](https://arxiv.org/abs/2308.12213) based on [xmed-lab/CLIPN](https://github.com/xmed-lab/CLIPN))
 
 
-**Ablation Experiments** 
-    * Transform
-    * Loss
-    * Training strategy
+## Ablation Experiments
+Results: [ablation_results](https://drive.google.com/drive/folders/1dfPbZx8CwcK3-M88zTtgnMVG9VbzIrAW)
+* Transform
+* Loss
+* Training strategy
 
 ## Analysis 
 
