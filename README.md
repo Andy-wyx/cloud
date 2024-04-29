@@ -5,7 +5,7 @@
 **Group members: Kangyu Zhu, Yingwei Song, Xueru Ma, Yuxiang Wang**
 
 <p align="center">
-  <img src="cloud/imgs/output1.jpeg" width=600><br/>
+  <img src="imgs/output1.jpeg" width=600><br/>
 </p>
 ## Introduction
 
