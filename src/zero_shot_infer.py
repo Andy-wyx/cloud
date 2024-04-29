@@ -203,7 +203,7 @@ def cal_fpr_recall(ind_conf, ood_conf, tpr=0.95):
 if __name__ == '__main__':
     args = parse_arguments()
     
-    pth_dir = '/home/ywan1084/Documents/Github/2470_untitled/src/logs/2024_04_28-22_11_48-model_ViT-B-16-lr_0.0003-b_32-j_1-p_amp'
+    pth_dir = '/home/ywan1084/Documents/Github/2470_untitled/src/logs/2024_04_28-23_39_47-model_ViT-B-16-lr_0.0003-b_32-j_1-p_amp'
 
     header_ood = ['epoch', 'method', 'oodset', 'AUROC', 'FPR@95']
     ood_lis = []
@@ -213,7 +213,7 @@ if __name__ == '__main__':
         model_type = "ViT-B-32"
     elif "ViT-L-14" in pth_dir:
         model_type = "ViT-L-14"
-    for i in range(1,11):    ### evaluate the model of the 10-th epoch.
+    for i in range(10,11):    ### evaluate the model of the 10-th epoch.
         ood_lis += infer(args, pth_dir, i, model_type=model_type)
 
         

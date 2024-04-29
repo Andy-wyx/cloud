@@ -701,14 +701,11 @@ class CLIPWithRPN(nn.Module):
         gt_texts=torch.stack(gt_texts).to(device)
         
         
-        
-        
-        
         valid_cropped_images=torch.cat((valid_cropped_images, gt_cropped_images), dim=0)
         valid_texts=torch.cat((valid_texts, gt_texts), dim=0)
         
         # image_features, text_features, text_features_no,logit_scale=self.clip_model(valid_cropped_images,valid_texts)
-        image_features, text_features, text_features_no,logit_scale=self.clip_model(valid_cropped_images,valid_texts)
+        image_features, text_features, text_features_no,logit_scale=self.clip_model(gt_cropped_images,gt_texts)
         if self.training:
             return image_features, text_features, text_features_no,logit_scale,proposal_losses
         return image_features, text_features,text_features_no,logit_scale
