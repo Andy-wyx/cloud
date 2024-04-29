@@ -8,7 +8,7 @@ from torchvision.datasets import CIFAR10 as cifar_10
 from torchvision.datasets import CIFAR100 as cifar_100
 import torchvision.datasets as dset
 from classification import ViT_Classifier, load_model
-from tuning_util import cosine_lr, LabelSmoothing, CIFAR10, CIFAR100, LSUN, ImageNet_R, maybe_dictionarize, Places, Textures, ImageNet, iNaturalist, SUN, ImageNet_O, OpenImage
+from tuning_util import maybe_dictionarize, Places, Textures, ImageNet, iNaturalist, SUN
 from tuning_cfg import parse_arguments
 from sklearn import metrics
 from sklearn.metrics import accuracy_score as Acc
@@ -19,41 +19,38 @@ from scipy.special import logsumexp
 import numpy as np
 import pandas as pd
 import shutil
-#os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
+
 to_np = lambda x: x.detach().cpu().numpy()
 def max_logit_score(logits):
     return to_np(torch.max(logits, -1)[0])
 def msp_score(logits):
     prob = torch.softmax(logits, -1)
     return to_np(torch.max(prob, -1)[0])
-def energy_score(logits, temperature=100):
-    return to_np(torch.logsumexp(logits*temperature-temperature, -1))
-
-
+def energy_score(logits):
+    return to_np(torch.logsumexp(logits, -1))
 
 def infer(args, pth_dir, epoch, model_type='ViT-B-32'):
-    batch_size = 512 if "ViT-B" in model_type else 128
     pth_name = os.path.join("checkpoints", "epoch_" + str(epoch) + ".pt")
     pre_train = os.path.join(pth_dir, pth_name)
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    batch_size = 512
+    train_data = "imagenet"
+    dataset = ImageNet()
     
-    train_data = "cifar100"
-    
-    dataset = cifar_100(root=os.path.expanduser("~/.cache"), download=True, train=False)
-    print(pre_train)
-    vit_class, process_train, process_test = load_model(model_type=model_type, pre_train=pre_train, dataset=dataset, device=device, multi = False)
-    
+    vit_class, process_train, process_test = load_model(model_type=model_type, pre_train=pre_train, dataset=dataset, device=device)
     
     vit_class.fc_yes.requires_grad = False
     vit_class.fc_no.requires_grad = False
-   
- 
-    dataset = CIFAR100(preprocess_train = process_train, preprocess_test = process_test, batch_size = args.batch_size)
-    test_dataset = {
-            "cifar10": CIFAR10(preprocess_train = process_train, preprocess_test = process_test, batch_size = args.batch_size).test_loader,
-            "LSUN": LSUN(preprocess_test = process_test, batch_size = args.batch_size).test_loader,
-            "ImageNet_R": ImageNet_R(preprocess_test = process_test, batch_size = args.batch_size).test_loader,
+
+    if train_data == "imagenet":
+        dataset = ImageNet(preprocess_train = process_train, preprocess_test = process_test, batch_size = batch_size)
+        test_dataset = {
+            "iNaturalist": iNaturalist(preprocess_test = process_test, batch_size = batch_size).test_loader,
+            "SUN": SUN(preprocess_test = process_test, batch_size = batch_size).test_loader,
+            "Textures": Textures(preprocess_test = process_test, batch_size = batch_size).test_loader,
+            "Places": Places(preprocess_test = process_test, batch_size = batch_size).test_loader,
         }
+    
         
     test_loader = dataset.test_loader  
 
@@ -66,31 +63,22 @@ def infer(args, pth_dir, epoch, model_type='ViT-B-32'):
     
     return ood_lis_epoch
     
-    
-    
             
 def cal_all_metric(id_dataset, model, epoch, ood_dataset=None, flag = True):
     model.eval()
-    fc_yes = model.module.fc_yes
-    fc_yes = F.normalize(fc_yes, dim=-1, p=2)
-    fc_no = model.module.fc_no
-    fc_no = F.normalize(fc_no, dim=-1, p=2)
-    scale = model.module.scale
     pred_lis = []
     gt_lis = []
     
     ind_logits, ind_prob, ind_energy = [], [], []
     if flag:
-        ind_yesno, ind_c1 = [], []
+        ind_ctw, ind_atd = [], []
     res = []
     with torch.no_grad():
         for i, batch in tqdm(enumerate(id_dataset)):
             batch = maybe_dictionarize(batch)
             inputs = batch["images"].cuda()
             labels = batch['labels'].cuda()
-            feat = model(inputs)
-            logits = F.normalize(feat, dim=-1, p=2) @ fc_yes.T * 100
-            logits_no = F.normalize(feat, dim=-1, p=2) @ fc_no.T * 100
+            logits, logits_no, _ = model(inputs)
             
             pred_lis += list(torch.argmax(logits, -1).detach().cpu().numpy())
             gt_lis += list(labels.detach().cpu().numpy())
@@ -104,22 +92,20 @@ def cal_all_metric(id_dataset, model, epoch, ood_dataset=None, flag = True):
                 yesno = torch.cat([ logits.unsqueeze(-1), logits_no.unsqueeze(-1) ], -1)
                 yesno = torch.softmax(yesno, dim=-1)[:,:,0]
                 yesno_s = torch.gather(yesno, dim=1, index=idex)
-                ind_yesno += list(yesno_s.detach().cpu().numpy())
-                ind_c1 += list((yesno * torch.softmax(logits-100, -1)).sum(1).detach().cpu().numpy())
+                ind_ctw += list(yesno_s.detach().cpu().numpy())
+                ind_atd += list((yesno * torch.softmax(logits, -1)).sum(1).detach().cpu().numpy())
                     
                 
             
         for name, ood_data in ood_dataset.items():
             ood_logits, ood_prob, ood_energy = [], [], []
             if flag:
-                ood_yesno, ood_c1, ood_yn_msp, ood_yn_logits, ood_yn_energy = [], [], [], [], []
+                ood_ctw, ood_atd = [], []
             for i, batch in tqdm(enumerate(ood_data)):
                 batch = maybe_dictionarize(batch)
                 inputs = batch["images"].cuda()
                 labels = batch['labels'].cuda()
-                feat = model(inputs)
-                logits = F.normalize(feat, dim=-1, p=2) @ fc_yes.T * 100
-                logits_no = F.normalize(feat, dim=-1, p=2) @ fc_no.T * 100
+                logits, logits_no, _ = model(inputs)
                 
                 ood_logits += list(max_logit_score(logits))
                 ood_prob += list(msp_score(logits))
@@ -131,14 +117,11 @@ def cal_all_metric(id_dataset, model, epoch, ood_dataset=None, flag = True):
                     yesno = torch.softmax(yesno, dim=-1)[:,:,0]
                     yesno_s = torch.gather(yesno, dim=1, index=idex)
 
-                    ood_yesno += list(yesno_s.detach().cpu().numpy())
-                    ood_c1 += list((yesno * torch.softmax(logits-100, -1) ).sum(1).detach().cpu().numpy())
-                    
+                    ood_ctw += list(yesno_s.detach().cpu().numpy())
+                    ood_atd += list((yesno * torch.softmax(logits, -1) ).sum(1).detach().cpu().numpy())
                     
                  
             #### MSP
-            print("ID YN mean {} OOD YN mean {}".format(str(np.mean(ind_yesno)), str(np.mean(ood_yesno))))
-            print("ID C+1 mean {} OOD C+1 mean {}".format(str(np.mean(ind_c1)), str(np.mean(ood_c1))))
             auc, fpr = cal_auc_fpr(ind_prob, ood_prob)
             res.append([epoch, "MSP", name, auc, fpr])
             #### MaxLogit
@@ -148,14 +131,11 @@ def cal_all_metric(id_dataset, model, epoch, ood_dataset=None, flag = True):
             auc, fpr = cal_auc_fpr(ind_energy, ood_energy)
             res.append([epoch, "Energy", name, auc, fpr])
             if flag:
-                #### YesNo
-                auc, fpr = cal_auc_fpr(ind_yesno, ood_yesno)
-               
-                res.append([epoch, "YN", name, auc, fpr])
+                auc, fpr = cal_auc_fpr(ind_ctw, ood_ctw)
+                res.append([epoch, "CTW", name, auc, fpr])
                 
-                auc, fpr = cal_auc_fpr(ind_c1, ood_c1)
-                
-                res.append([epoch, "C+1", name, auc, fpr])
+                auc, fpr = cal_auc_fpr(ind_atd, ood_atd)
+                res.append([epoch, "ATD", name, auc, fpr])
                 
             
     pred_lis = np.array(pred_lis)
@@ -189,7 +169,8 @@ def cal_fpr_recall(ind_conf, ood_conf, tpr=0.95):
 if __name__ == '__main__':
     args = parse_arguments()
     
-    pth_dir = './logs/yours'
+    #pth_dir = './logs/2023_08_24-00_02_18-model_ViT-B-32-lr_0.0003-b_512-j_4-p_amp'
+    pth_dir = './logs/2024_4_19-00_00_00-model_ViT-B-16-lr_0.0003-b_512-j_4-p_amp'
     
     header_ood = ['epoch', 'method', 'oodset', 'AUROC', 'FPR@95']
     ood_lis = []
@@ -199,9 +180,7 @@ if __name__ == '__main__':
         model_type = "ViT-B-32"
     elif "ViT-L-14" in pth_dir:
         model_type = "ViT-L-14"
-    j = 1
-    l = 10
-    for i in range(j, j+l):
+    for i in range(10, 11):    ### evaluate the model of the 10-th epoch.
         ood_lis += infer(args, pth_dir, i, model_type=model_type)
         
     df = pd.DataFrame(ood_lis, columns=header_ood)

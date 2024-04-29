@@ -58,6 +58,9 @@ def train_one_epoch(model, data, epoch, optimizer, scaler, scheduler, args, tb_w
         use_horovod=args.horovod)
 
     data['train'].set_epoch(epoch)  # set epoch in process safe manner via sampler or shared_epoch
+    # if  args.dataset_type=="COCO":
+    #     sampler=data['train'].sampler
+    #     # sampler.set_epoch(epoch)
     dataloader = data['train'].dataloader
     num_batches_per_epoch = dataloader.num_batches
     sample_digits = math.ceil(math.log(dataloader.num_samples + 1, 10))
@@ -65,7 +68,7 @@ def train_one_epoch(model, data, epoch, optimizer, scaler, scheduler, args, tb_w
     loss_m = AverageMeter()
     Loss_bin_yes = AverageMeter()
     Loss_bin_no = AverageMeter()
-    Loss_intra = AverageMeter()
+    Loss_tso = AverageMeter()
     batch_time_m = AverageMeter()
     data_time_m = AverageMeter()
     end = time.time()
@@ -74,8 +77,6 @@ def train_one_epoch(model, data, epoch, optimizer, scaler, scheduler, args, tb_w
         scheduler(step)
 
         images, texts = batch
-        #print(texts.size()) # batch 77
-        #print(images.size()) # batch 3 H W
 
         images = images.to(device=device, non_blocking=True)
         texts = texts.to(device=device, non_blocking=True)
@@ -85,8 +86,8 @@ def train_one_epoch(model, data, epoch, optimizer, scaler, scheduler, args, tb_w
 
         with autocast():
             image_features, text_features, text_features_no, logit_scale = model(images, texts)
-            loss_bin_yes, loss_bin_no, loss_intra_no = loss(image_features, text_features, text_features_no, logit_scale) #+ loss(image_features, text_features_no, logit_scale)
-            total_loss = loss_bin_yes * 0.5 + 0.5 * loss_bin_no + 0.5 * loss_intra_no  # default: 0.5
+            loss_bin_yes, loss_bin_no, loss_tso = loss(image_features, text_features, text_features_no, logit_scale) #+ loss(image_features, text_features_no, logit_scale)
+            total_loss = (loss_bin_yes + loss_bin_no + loss_tso) * 0.5  # default: 0.5
         #time.sleep(1000)
         if scaler is not None:
             scaler.scale(total_loss).backward()
@@ -126,14 +127,14 @@ def train_one_epoch(model, data, epoch, optimizer, scaler, scheduler, args, tb_w
             loss_m.update(total_loss.item(), batch_size)
             Loss_bin_yes.update(loss_bin_yes.item(), batch_size)
             Loss_bin_no.update(loss_bin_no.item(), batch_size)
-            Loss_intra.update(loss_intra_no.item(), batch_size)
+            Loss_tso.update(loss_tso.item(), batch_size)
             logit_scale_scalar = logit_scale.item()
             logging.info(
                 f"Train Epoch: {epoch} [{num_samples:>{sample_digits}}/{samples_per_epoch} ({percent_complete:.0f}%)] "
                 f"L: {loss_m.val:#.5g} ({loss_m.avg:#.4g}) "
                 f"ly: {Loss_bin_yes.val:#.5g} ({Loss_bin_yes.avg:#.4g}) "
                 f"ln: {Loss_bin_no.val:#.5g} ({Loss_bin_no.avg:#.4g}) "
-                f"lintra: {Loss_intra.val:#.5g} ({Loss_intra.avg:#.4g}) "
+                f"ltso: {Loss_tso.val:#.5g} ({Loss_tso.avg:#.4g}) "
                 f"Data (t): {data_time_m.avg:.3f} "
                 f"Batch (t): {batch_time_m.avg:.3f}, {args.batch_size*args.world_size / batch_time_m.val:#g}/s "
                 f"LR: {optimizer.param_groups[0]['lr']:5f} "
@@ -145,7 +146,7 @@ def train_one_epoch(model, data, epoch, optimizer, scaler, scheduler, args, tb_w
                 "loss": loss_m.val,
                 "ly": Loss_bin_yes.val,
                 "ln": Loss_bin_no.val,
-                "lintra": Loss_intra.val,
+                "ltso": Loss_tso.val,
                 "data_time": data_time_m.val,
                 "batch_time": batch_time_m.val,
                 "samples_per_scond": args.batch_size*args.world_size / batch_time_m.val,

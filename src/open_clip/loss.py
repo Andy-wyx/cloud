@@ -109,11 +109,11 @@ class ClipLoss(nn.Module):
 
     def forward(self, image_features, text_features, text_features_no, logit_scale):
         device = image_features.device
-        if self.world_size > 1:
+        if self.world_size >1:
             all_image_features, all_text_features, all_text_features_no = gather_features(
                 image_features, text_features, text_features_no,
                 self.local_loss, self.gather_with_grad, self.rank, self.world_size, self.use_horovod)
-
+            
             if self.local_loss:
                 logits_per_image = logit_scale * image_features @ all_text_features.T
                 logits_per_text = logit_scale * text_features @ all_image_features.T
@@ -125,8 +125,10 @@ class ClipLoss(nn.Module):
                 #logits_intra_no = logit_scale * all_text_features_no @ all_text_features_no.T
                     
         else:
+            all_image_features,all_text_features,all_text_features_no = image_features, text_features, text_features_no
             logits_per_image = logit_scale * image_features @ text_features.T
             logits_per_text = logit_scale * text_features @ image_features.T
+            logits_per_image_no = logit_scale * all_image_features @ all_text_features_no.T
 
         # calculated ground-truth and cache if enabled
         num_logits = logits_per_image.shape[0]

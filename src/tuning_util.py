@@ -13,7 +13,11 @@ import torchvision.datasets as dset
 import random
 import os
 import shutil
+from torch.utils.data import DataLoader, Dataset
+from PIL import Image
+from pycocotools.coco import COCO
 
+from open_clip import tokenize
 def assign_learning_rate(param_group, new_lr):
     param_group["lr"] = new_lr
 
@@ -52,7 +56,6 @@ class Places:
                  batch_size=128,
                  num_workers=16,
                  classnames=None):
-        #data_root = '/home/hwangfd/OOD_DATA/Places'
         data_root = '../data/ood_data/Places'
         self.test_dataset = dset.ImageFolder(root=data_root, transform=preprocess_test)
         self.test_loader = torch.utils.data.DataLoader(
@@ -66,33 +69,151 @@ class Textures:
                  batch_size=128,
                  num_workers=16,
                  classnames=None):
-        #data_root = '/home/hwangfd/OOD_DATA/Textures'
-        data_root = '../data/ood_data/Textures'
+        data_root = '../data/ood_data/Textures/images'
         self.test_dataset = dset.ImageFolder(root=data_root, transform=preprocess_test)
         self.test_loader = torch.utils.data.DataLoader(
             self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
         )
         self.classnames = self.test_dataset.classes
+class COCODataset(Dataset):
+    def __init__(self, img_dir,annotation_file,is_train=False, transform=None):
+        self.coco = COCO(annotation_file)
+        self.transform = transform
+        self.data = []
+        
+        self.is_train=is_train
+        
+        self.img_folder_dir=img_dir
+        self.category_dict={cat_id: cat['name'] for cat_id, cat in self.coco.cats.items()}
+        self.classes=['person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light', 'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe', 'backpack', 'umbrella', 'handbag', 'tie', 'suitcase', 'frisbee', 'skis', 'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard', 'tennis racket', 'bottle', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple', 'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake', 'chair', 'couch', 'potted plant', 'bed', 'dining table', 'toilet', 'tv', 'laptop', 'mouse', 'remote', 'keyboard', 'cell phone', 'microwave']
+        self.texts=[]
+        for img_id in self.coco.imgs:
+            img_info = self.coco.loadImgs(img_id)[0]
+            annotations = self.coco.loadAnns(self.coco.getAnnIds(imgIds=img_id))
+            for annotation in annotations:
+                bbox = annotation['bbox']
+                category_name = self.category_dict[annotation['category_id']]
+                text = f'a photo of {category_name}'
+                self.data.append((img_info['file_name'], bbox, text,annotation['category_id']))
+                self.texts.append(text)
+        # self.classes=list(set(self.texts))
+        # print(self.classes)
+        
+            
 
+    def __getitem__(self, index):
+        file_name, bbox, text,class_id = self.data[index]
+        
+        image=Image.open(f'{self.img_folder_dir}/{file_name}')
+        
+        cropped_image = image.crop((bbox[0], bbox[1], bbox[0] + bbox[2], bbox[1] + bbox[3]))
+        if self.is_train:
+            if self.transform:
+                width, height = cropped_image.size
+                if width == 0 or height == 0:
+                    cropped_image= torch.zeros(3, 224, 224)
+                else:
+                    cropped_image = self.transform(cropped_image)
+                
+                text=tokenize(text)
+            return cropped_image, text
+        else:
+            if self.transform:
+                cropped_image = self.transform(cropped_image)
+                # text=tokenize(text)
+            return cropped_image, class_id
+
+    
+
+    def __len__(self):
+        return len(self.data)
+class COCODataset_RPNClipN(Dataset):
+    def __init__(self, img_dir, annotation_file, is_train=False,transform=None):
+        self.coco = COCO(annotation_file)
+        self.transform = transform
+        self.is_train=is_train
+        self.img_dir = img_dir
+        self.img_ids = list(self.coco.imgs.keys())  # Store image IDs
+        self.category_dict = {cat_id: cat['name'] for cat_id, cat in self.coco.cats.items()}
+        self.classes=['person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light', 'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe', 'backpack', 'umbrella', 'handbag', 'tie', 'suitcase', 'frisbee', 'skis', 'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard', 'tennis racket', 'bottle', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple', 'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake', 'chair', 'couch', 'potted plant', 'bed', 'dining table', 'toilet', 'tv', 'laptop', 'mouse', 'remote', 'keyboard', 'cell phone', 'microwave']
+    def __getitem__(self, index):
+        img_id = self.img_ids[index]
+        img_info = self.coco.loadImgs(img_id)[0]
+        annotations = self.coco.loadAnns(self.coco.getAnnIds(imgIds=img_id))
+
+        # Load the image
+        image_path = f"{self.img_dir}/{img_info['file_name']}"
+        image = Image.open(image_path).convert('RGB')
+
+        # Collect all texts and bounding boxes
+        texts = []
+        bboxes = []
+        bbox_labels=[]
+        bboxes_info = {'bboxes': [], 'texts': [],'bboxes_labels':[]}
+        for annotation in annotations:
+            category_id = annotation['category_id']
+            category_name = self.category_dict[category_id]
+            bbox = annotation['bbox']
+            x, y, w, h = bbox
+            bbox_converted = [x, y, x+w, y+h]  # Convert to [x1, y1, x2, y2] format
+            bboxes.append(bbox_converted )  # Add category_id to the target
+            bbox_labels.append(category_id)
+            text = f'a photo of {category_name}'
+            # text=tokenize(texts)
+            texts.append(text)
+            
+        
+        
+        
+        # Convert bbox_targets to a tensor
+        bboxes = torch.tensor(bboxes, dtype=torch.float32)
+        bboxes_info['texts']=texts
+        bboxes_info['bboxes']=bboxes
+        bboxes_info['bbox_labels']=bbox_labels
+        bboxes_info['original_image']=image
+        # bboxes_info['bboxes'] = torch.tensor(bboxes_info['bboxes'], dtype=torch.float32)
+        # Apply transformations if any
+        if self.transform:
+            transformed_image = self.transform(image)
+            return transformed_image, bboxes_info
+        return image, bboxes_info
+
+    def __len__(self):
+        return len(self.img_ids)
+class COCO_val:
+    def __init__(self, img_dir,annotation_file,preprocess_test,
+                 batch_size=128,
+                 num_workers=16,
+                 classnames=None,
+                 OOD=False):
+        # img_dir='/data/kangyuzhu/coco_val/val2017',
+        # annotation_file='/data/kangyuzhu/coco_val/annotations/instances_val2017.json',
+        
+        self.test_dataset = COCODataset(img_dir=img_dir,annotation_file=annotation_file,transform=preprocess_test,)
+        self.test_loader = torch.utils.data.DataLoader(
+            self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+        )
+        if not OOD:
+            self.classnames = self.test_dataset.classes
+        else:
+            self.classnames=None
 class iNaturalist:
     def __init__(self, preprocess_test,
                  batch_size=128,
                  num_workers=16,
                  classnames=None):
-        #data_root = '/home/hwangfd/OOD_DATA/iNaturalist'
         data_root = '../data/ood_data/iNaturalist'
         self.test_dataset = dset.ImageFolder(root=data_root, transform=preprocess_test)
         self.test_loader = torch.utils.data.DataLoader(
             self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
         )
         self.classnames = self.test_dataset.classes
-        
+
 class SUN:
     def __init__(self, preprocess_test,
                  batch_size=128,
                  num_workers=16,
                  classnames=None):
-        #data_root = '/home/hwangfd/OOD_DATA/SUN'
         data_root = '../data/ood_data/SUN'
         self.test_dataset = dset.ImageFolder(root=data_root, transform=preprocess_test)
         self.test_loader = torch.utils.data.DataLoader(
@@ -123,19 +244,17 @@ class ImageNet:
                  batch_size=128,
                  num_workers=16,
                  classnames=None):
-        #data_root_train = '/home/hwangfd/OOD_DATA/ImageNet_train'
-        data_root_train = '../data/id_data/train'
-        self.train_dataset = dset.ImageFolder(
-            root=data_root_train, transform=preprocess_train
-        )
+        data_root_train = '/data/kangyuzhu/ood_data/ImageNet_train'
+        # self.train_dataset = dset.ImageFolder(
+        #     root=data_root_train, transform=preprocess_train
+        # )
 
-        #data_root_test = '/home/hwangfd/OOD_DATA/ImageNet_val/images'
         data_root_test = '../data/id_data/val'
         self.test_dataset = dset.ImageFolder(root=data_root_test, transform=preprocess_test)
         
-        self.train_loader = torch.utils.data.DataLoader(
-            self.train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers
-        )
+        # self.train_loader = torch.utils.data.DataLoader(
+        #     self.train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers
+        # )
         
         self.test_loader = torch.utils.data.DataLoader(
             self.test_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers

@@ -13,13 +13,11 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from torch.utils.checkpoint import checkpoint
-import torchvision.transforms as transforms
+
 from .timm_model import TimmModel
 from .utils import freeze_batch_norm_2d, to_2tuple
 import time
-from torchvision.models.detection.rpn import AnchorGenerator, RPNHead, RegionProposalNetwork
-from torchvision.models.detection.image_list import ImageList
-from torchvision.ops import box_iou
+
 class Bottleneck(nn.Module):
     expansion = 4
 
@@ -633,154 +631,6 @@ class CLIP(nn.Module):
         return image_features, text_features, text_features_no, self.logit_scale.exp()
 
 
-
-class CLIPWithRPN(nn.Module):
-    def __init__(self, clip_model, rpn_model,backbone):
-        super().__init__()
-        self.clip_model = clip_model
-        self.rpn = rpn_model  # Use the provided RPN model instance
-        self.backbone=backbone
-
-    def forward(self, images, texts,original_images,device,bbox_targets=None):
-        '''
-        targets = [
-            {
-                'boxes': torch.tensor([[10, 20, 30, 40], [50, 60, 70, 80]]),
-                'labels': torch.tensor([1, 2])
-            },
-            {
-                'boxes': torch.tensor([[15, 25, 35, 45]]),
-                'labels': torch.tensor([1])
-            }
-        ]
-
-        '''
-        
-        
-        # image_features = self.clip_model.encode_image(images)
-        
-        #print("Device of images:", images.device)
-        #print("Device of bbox_targets:", [t["boxes"].device for t in bbox_targets])
-        bbox_targets = [{k: v.to(device) for k, v in t.items()} for t in bbox_targets]
-
-        backbone_features=self.backbone(images)
-
-        #print("Device of backbone_features:", {k: v.device for k, v in backbone_features.items()})
-        
-        height, width = images.shape[2], images.shape[3]
-        image_sizes = [(height, width)] * images.shape[0] 
-        images_list = ImageList(images, image_sizes)
-        # backbone_features = F.normalize(backbone_features, dim=-1)
-        proposals, proposal_losses = self.rpn(images_list, backbone_features, targets=bbox_targets)
-        valid_cropped_images,valid_labels,gt_cropped_images,gt_labels=get_valid_cropped_images_texts(images,proposals,original_images,bbox_targets,IoU_threshold=0.5)
-        # image_features, text_features = self.clip_model.encode_features_and_text(features, texts)
-        # combine target_bbox or not?
-        # gt_boxes = [target['boxes'] for target in bbox_targets]
-        # gt_boxes = torch.cat(gt_boxes, dim=0)
-        # flat_texts = [item for sublist in texts for item in sublist]
-        # gt_texts = torch.stack(flat_texts, dim=0)
-        
-        
-        # resize_transform = transforms.Resize((224, 224))
-        # valid_cropped_images= [resize_transform(img) for img in valid_cropped_images]
-        valid_cropped_images = torch.stack(valid_cropped_images)
-        valid_cropped_images=valid_cropped_images.to(device)
-        # gt_cropped_images=[resize_transform(img) for img in gt_cropped_images]
-        gt_cropped_images=torch.stack(gt_cropped_images)
-        gt_cropped_images=gt_cropped_images.to(device)
-        
-        
-        valid_descriptions = labels_to_descriptions_COCO(valid_labels)
-        from open_clip import tokenize
-        valid_texts=[tokenize(text) for text in valid_descriptions]
-        valid_texts=torch.stack(valid_texts).to(device)
-        
-        gt_descriptions = labels_to_descriptions_COCO(gt_labels)
-        from open_clip import tokenize
-        gt_texts=[tokenize(text) for text in gt_descriptions]
-        gt_texts=torch.stack(gt_texts).to(device)
-        
-        
-        
-        
-        
-        valid_cropped_images=torch.cat((valid_cropped_images, gt_cropped_images), dim=0)
-        valid_texts=torch.cat((valid_texts, gt_texts), dim=0)
-        
-        # image_features, text_features, text_features_no,logit_scale=self.clip_model(valid_cropped_images,valid_texts)
-        image_features, text_features, text_features_no,logit_scale=self.clip_model(valid_cropped_images,valid_texts)
-        if self.training:
-            return image_features, text_features, text_features_no,logit_scale,proposal_losses
-        return image_features, text_features,text_features_no,logit_scale
-def labels_to_descriptions_COCO(labels):
-    category_dict={1: 'person', 2: 'bicycle', 3: 'car', 4: 'motorcycle', 5: 'airplane', 6: 'bus', 7: 'train', 8: 'truck', 9: 'boat', 10: 'traffic light', 11: 'fire hydrant', 12: 'stop sign', 13: 'parking meter', 14: 'bench', 15: 'bird', 16: 'cat', 17: 'dog', 18: 'horse', 19: 'sheep', 20: 'cow', 21: 'elephant', 22: 'bear', 23: 'zebra', 24: 'giraffe', 25: 'backpack', 26: 'umbrella', 27: 'handbag', 28: 'tie', 29: 'suitcase', 30: 'frisbee', 31: 'skis', 32: 'snowboard', 33: 'sports ball', 34: 'kite', 35: 'baseball bat', 36: 'baseball glove', 37: 'skateboard', 38: 'surfboard', 39: 'tennis racket', 40: 'bottle', 41: 'wine glass', 42: 'cup', 43: 'fork', 44: 'knife', 45: 'spoon', 46: 'bowl', 47: 'banana', 48: 'apple', 49: 'sandwich', 50: 'orange', 51: 'broccoli', 52: 'carrot', 53: 'hot dog', 54: 'pizza', 55: 'donut', 56: 'cake', 57: 'chair', 58: 'couch', 59: 'potted plant', 60: 'bed', 61: 'dining table', 62: 'toilet', 63: 'tv', 64: 'laptop', 65: 'mouse', 66: 'remote', 67: 'keyboard', 68: 'cell phone', 69: 'microwave', 70: 'oven', 71: 'toaster', 72: 'sink', 73: 'refrigerator', 74: 'book', 75: 'clock', 76: 'vase', 77: 'scissors', 78: 'teddy bear', 79: 'hair drier', 80: 'toothbrush'}
-    descriptions = []
-    for label in labels:
-        category_name = category_dict.get(label, "unknown")  # 使用 get 避免 KeyError
-        descriptions.append(f"a photo of {category_name}")
-    return descriptions
-def get_valid_cropped_images_texts(images, proposals,original_images, targets, IoU_threshold=0.5):
-    valid_cropped_images = []
-    valid_labels = []
-    gt_cropped_images=[]
-    gt_labels=[]
-    # Loop over each image and its corresponding proposals and targets
-    for i, (image, image_proposals, image_targets) in enumerate(zip(original_images, proposals, targets)):
-        # Extract target bounding boxes and labels for this image
-        target_boxes = image_targets['boxes']
-        target_labels = image_targets['labels']
-
-        #print(image_proposals.shape)
-
-        # Calculate IoU between proposals for this image and target boxes
-        iou = box_iou(image_proposals, target_boxes)
-
-        # Find proposals with max IoU for each target box and filter by threshold
-        max_iou, max_indices = iou.max(dim=1)
-        valid_proposal_indices = max_iou >= IoU_threshold
-
-        # Filter valid proposals and corresponding max IoU indices
-        valid_proposals = image_proposals[valid_proposal_indices]
-        corresponding_target_indices = max_indices[valid_proposal_indices]
-        from torchvision import transforms
-        from torchvision.transforms.functional import InterpolationMode
-        transform = transforms.Compose([
-            
-            transforms.RandomResizedCrop(
-                size=224,
-                scale=(0.9, 1.0),
-                ratio=(0.75, 1.3333),
-                interpolation=InterpolationMode.BICUBIC
-            ),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.48145466, 0.4578275, 0.40821073], std=[0.26862954, 0.26130258, 0.27577711])
-        ])
-        # Crop valid proposals and retrieve corresponding texts
-        for proposal, target_idx in zip(valid_proposals, corresponding_target_indices):
-            # x1, y1, x2, y2 = proposal.int().tolist()
-            
-            x1, y1, x2, y2 = proposal.tolist()
-            # Crop the image region corresponding to the valid proposal
-            # Adjust cropping if your images are not in C, H, W format
-            # cropped_image = image[:, y1:y2, x1:x2]
-            cropped_image = image.crop((x1,y1,x2,y2))
-            cropped_image=transform(cropped_image)
-            valid_cropped_images.append(cropped_image)
-            valid_labels.append(target_labels[target_idx].item())  # Convert label to Python scalar
-        for gt_box,gt_label in zip(target_boxes,target_labels):
-            # x1, y1, x2, y2 = gt_box.int().tolist()
-            x1, y1, x2, y2 = gt_box.tolist()
-            # cropped_image = image[:, y1:y2, x1:x2]
-            cropped_image = image.crop((x1,y1,x2,y2))
-            cropped_image=transform(cropped_image)
-            gt_cropped_images.append(cropped_image)
-            gt_labels.append(gt_label.item())  # Convert label to Python scalar
-            
-            
-            
-
-    return valid_cropped_images, valid_labels,gt_cropped_images,gt_labels
-    
 def convert_weights_to_fp16(model: nn.Module):
     """Convert applicable model parameters to fp16"""
 

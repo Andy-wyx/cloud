@@ -9,8 +9,6 @@ import PIL
 import numpy as np
 import torchvision
 from torchvision import transforms
-from torchvision.datasets import CIFAR10 as PyTorchCIFAR10
-from torchvision.datasets import CIFAR100 as PyTorchCIFAR100
 import torchvision.datasets as dset
 import random
 import os
@@ -46,87 +44,30 @@ def accuracy(output, target, topk=(1,)):
     return [float(correct[:k].reshape(-1).float().sum(0, keepdim=True).cpu().numpy()) for k in topk]
 
 
-#cifar10_classnames = ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
-class CIFAR10:
-    def __init__(self, preprocess_train, preprocess_test,
-                 batch_size=128,
-                 num_workers=16,
-                 classnames=None):
 
-        self.train_dataset = PyTorchCIFAR10(
-            root=os.path.expanduser("~/.cache"), download=True, train=True, transform=preprocess_train
-        )
-
-        self.train_loader = torch.utils.data.DataLoader(
-            self.train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers
-        )
-
-        self.test_dataset = PyTorchCIFAR10(
-            root=os.path.expanduser("~/.cache"), download=True, train=False, transform=preprocess_test
-        )
-
-        self.test_loader = torch.utils.data.DataLoader(
-            self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
-        )
-
-        self.classnames = self.test_dataset.classes
-        
-
-class LSUN:
-    def __init__(self, preprocess_test,
-                 batch_size=128,
-                 num_workers=16,
-                 classnames=None):
-        data_root = './data/LSUN'
-        self.test_dataset = dset.ImageFolder(root=data_root, transform=preprocess_test)
-        self.test_loader = torch.utils.data.DataLoader(
-            self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
-        )
-        self.classnames = self.test_dataset.classes
+    
         
 class Places:
     def __init__(self, preprocess_test,
                  batch_size=128,
                  num_workers=16,
                  classnames=None):
-        data_root = '/home/hwangfd/OOD_DATA/Places'
+        #data_root = '/home/hwangfd/OOD_DATA/Places'
+        data_root = '../data/ood_data/Places'
         self.test_dataset = dset.ImageFolder(root=data_root, transform=preprocess_test)
         self.test_loader = torch.utils.data.DataLoader(
             self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
         )
         self.classnames = self.test_dataset.classes
 
-class OpenImage:
-    def __init__(self, preprocess_test,
-                 batch_size=128,
-                 num_workers=16,
-                 classnames=None):
-        data_root = '/home/hwangfd/OOD_DATA/OpenImage'
-        self.test_dataset = dset.ImageFolder(root=data_root, transform=preprocess_test)
-        self.test_loader = torch.utils.data.DataLoader(
-            self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
-        )
-        self.classnames = self.test_dataset.classes
-    
-class ImageNet_O:
-    def __init__(self, preprocess_test,
-                 batch_size=128,
-                 num_workers=16,
-                 classnames=None):
-        data_root = '/home/hwangfd/OOD_DATA/imagenet-o'
-        self.test_dataset = dset.ImageFolder(root=data_root, transform=preprocess_test)
-        self.test_loader = torch.utils.data.DataLoader(
-            self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
-        )
-        self.classnames = self.test_dataset.classes
-        
-        
+
 class Textures:
     def __init__(self, preprocess_test,
                  batch_size=128,
                  num_workers=16,
                  classnames=None):
-        data_root = '/home/hwangfd/OOD_DATA/Textures'
+        #data_root = '/home/hwangfd/OOD_DATA/Textures'
+        data_root = '../data/ood_data/Textures'
         self.test_dataset = dset.ImageFolder(root=data_root, transform=preprocess_test)
         self.test_loader = torch.utils.data.DataLoader(
             self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
@@ -138,7 +79,8 @@ class iNaturalist:
                  batch_size=128,
                  num_workers=16,
                  classnames=None):
-        data_root = '/home/hwangfd/OOD_DATA/iNaturalist'
+        #data_root = '/home/hwangfd/OOD_DATA/iNaturalist'
+        data_root = '../data/ood_data/iNaturalist'
         self.test_dataset = dset.ImageFolder(root=data_root, transform=preprocess_test)
         self.test_loader = torch.utils.data.DataLoader(
             self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
@@ -150,48 +92,12 @@ class SUN:
                  batch_size=128,
                  num_workers=16,
                  classnames=None):
-        data_root = '/home/hwangfd/OOD_DATA/SUN'
+        #data_root = '/home/hwangfd/OOD_DATA/SUN'
+        data_root = '../data/ood_data/SUN'
         self.test_dataset = dset.ImageFolder(root=data_root, transform=preprocess_test)
         self.test_loader = torch.utils.data.DataLoader(
             self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
         )
-        self.classnames = self.test_dataset.classes
-        
-class ImageNet_R:
-    def __init__(self, preprocess_test,
-                 batch_size=128,
-                 num_workers=16,
-                 classnames=None):
-        data_root = './data/ImageNet_R'
-        self.test_dataset = dset.ImageFolder(root=data_root, transform=preprocess_test)
-        self.test_loader = torch.utils.data.DataLoader(
-            self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
-        )
-        self.classnames = self.test_dataset.classes
-
-        
-class CIFAR100:
-    def __init__(self, preprocess_train, preprocess_test,
-                 batch_size=128,
-                 num_workers=16,
-                 classnames=None):
-
-        self.train_dataset = PyTorchCIFAR100(
-            root=os.path.expanduser("~/.cache"), download=True, train=True, transform=preprocess_train
-        )
-
-        self.train_loader = torch.utils.data.DataLoader(
-            self.train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers
-        )
-
-        self.test_dataset = PyTorchCIFAR100(
-            root=os.path.expanduser("~/.cache"), download=True, train=False, transform=preprocess_test
-        )
-
-        self.test_loader = torch.utils.data.DataLoader(
-            self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
-        )
-
         self.classnames = self.test_dataset.classes
         
         
@@ -209,30 +115,6 @@ def maybe_dictionarize(batch):
 
     return batch
 
-class LabelSmoothing(torch.nn.Module):
-    def __init__(self, smoothing=0.0):
-        super(LabelSmoothing, self).__init__()
-        self.confidence = 1.0 - smoothing
-        self.smoothing = smoothing
-
-    def forward(self, x, target):
-        logprobs = torch.nn.functional.log_softmax(x, dim=-1)
-
-        nll_loss = -logprobs.gather(dim=-1, index=target.unsqueeze(1))
-        nll_loss = nll_loss.squeeze(1)
-        if self.smoothing != 0.0:
-            smooth_loss = -logprobs.mean(dim=-1)
-            loss = self.confidence * nll_loss + self.smoothing * smooth_loss
-        else:
-            loss = self.confidence * nll_loss
-        return loss.mean()
-
-def one_hot(label, num_class):
-    label = label.unsqueeze(1)
-    batch_size = label.size(0)
-    mask = torch.zeros(batch_size, num_class).cuda()
-    one_hot = mask.scatter_(1, label, 1).long()
-    return one_hot
 
 
     
@@ -241,10 +123,14 @@ class ImageNet:
                  batch_size=128,
                  num_workers=16,
                  classnames=None):
-        data_root_train = '/home/hwangfd/OOD_DATA/ImageNet_train'
-        self.train_dataset = dset.ImageFolder(root=data_root_train, transform=preprocess_test)
+        #data_root_train = '/home/hwangfd/OOD_DATA/ImageNet_train'
+        data_root_train = '../data/id_data/train'
+        self.train_dataset = dset.ImageFolder(
+            root=data_root_train, transform=preprocess_train
+        )
 
-        data_root_test = '/home/hwangfd/OOD_DATA/ImageNet_val/images'
+        #data_root_test = '/home/hwangfd/OOD_DATA/ImageNet_val/images'
+        data_root_test = '../data/id_data/val'
         self.test_dataset = dset.ImageFolder(root=data_root_test, transform=preprocess_test)
         
         self.train_loader = torch.utils.data.DataLoader(
@@ -252,7 +138,7 @@ class ImageNet:
         )
         
         self.test_loader = torch.utils.data.DataLoader(
-            self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+            self.test_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers
         )
         self.classnames = ["tench", "goldfish", "great white shark", "tiger shark", "hammerhead shark", "electric ray",
                         "stingray", "rooster", "hen", "ostrich", "brambling", "goldfinch", "house finch", "junco",

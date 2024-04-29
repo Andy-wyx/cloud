@@ -8,7 +8,7 @@ from torchvision.datasets import CIFAR10 as cifar_10
 from torchvision.datasets import CIFAR100 as cifar_100
 import torchvision.datasets as dset
 from classification import ViT_Classifier, load_model
-from tuning_util import maybe_dictionarize, Places, Textures, ImageNet, iNaturalist, SUN
+from tuning_util import maybe_dictionarize, Places, Textures, ImageNet, iNaturalist, SUN,COCO_val
 from tuning_cfg import parse_arguments
 from sklearn import metrics
 from sklearn.metrics import accuracy_score as Acc
@@ -19,40 +19,54 @@ from scipy.special import logsumexp
 import numpy as np
 import pandas as pd
 import shutil
+from tuning_util import COCODataset
 
 to_np = lambda x: x.detach().cpu().numpy()
 def max_logit_score(logits):
-    return to_np(torch.max(logits, -1)[0])
+    return to_np(torch.max(logits, -1)[0]) # maximum value of the logits from the final neural network layer before any normalization like softmax
 def msp_score(logits):
     prob = torch.softmax(logits, -1)
-    return to_np(torch.max(prob, -1)[0])
+    return to_np(torch.max(prob, -1)[0]) # maximum probability value after applying the softmax function to the logits:
 def energy_score(logits):
-    return to_np(torch.logsumexp(logits, -1))
+    return to_np(torch.logsumexp(logits, -1)) #  logarithm of the sum of exponentials of input elements where lower energy values can indicate higher confidence
 
-def infer(args, pth_dir, epoch, model_type='ViT-B-32'):
+def infer(args, pth_dir, epoch, model_type='ViT-B-16'):
     pth_name = os.path.join("checkpoints", "epoch_" + str(epoch) + ".pt")
     pre_train = os.path.join(pth_dir, pth_name)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     batch_size = 512
     train_data = "imagenet"
-    dataset = ImageNet()
+    # dataset = ImageNet()
+    dataset=COCODataset(img_dir="/home/ywan1084/Documents/Github/2470_untitled/data/coco/val2017",annotation_file="/home/ywan1084/Documents/Github/2470_untitled/data/coco/annotations/id_pretrain.json",is_train=False, transform=None)
     
     vit_class, process_train, process_test = load_model(model_type=model_type, pre_train=pre_train, dataset=dataset, device=device)
-    
+    # vit_class, process_train, process_test = load_model(model_type=model_type, pre_train=pre_train, dataset=None, device=device)
     vit_class.fc_yes.requires_grad = False
     vit_class.fc_no.requires_grad = False
+    
+    print('Model loaded!')
 
+    # if train_data == "imagenet":
+    #     dataset = ImageNet(preprocess_train = process_train, preprocess_test = process_test, batch_size = batch_size)
+    #     test_dataset = {
+    #         "iNaturalist": iNaturalist(preprocess_test = process_test, batch_size = batch_size).test_loader,
+    #         "SUN": SUN(preprocess_test = process_test, batch_size = batch_size).test_loader,
+    #         "Textures": Textures(preprocess_test = process_test, batch_size = batch_size).test_loader,
+    #         "Places": Places(preprocess_test = process_test, batch_size = batch_size).test_loader,
+    #     }
     if train_data == "imagenet":
-        dataset = ImageNet(preprocess_train = process_train, preprocess_test = process_test, batch_size = batch_size)
+        dataset = COCO_val(img_dir='/home/ywan1084/Documents/Github/2470_untitled/data/coco/val2017',
+                           annotation_file='/home/ywan1084/Documents/Github/2470_untitled/data/coco/annotations/id_test.json',preprocess_test = process_test,
+                           batch_size = batch_size,)
         test_dataset = {
-            "iNaturalist": iNaturalist(preprocess_test = process_test, batch_size = batch_size).test_loader,
-            "SUN": SUN(preprocess_test = process_test, batch_size = batch_size).test_loader,
-            "Textures": Textures(preprocess_test = process_test, batch_size = batch_size).test_loader,
-            "Places": Places(preprocess_test = process_test, batch_size = batch_size).test_loader,
+            "COCO_ood": COCO_val(img_dir='/home/ywan1084/Documents/Github/2470_untitled/data/coco/val2017',
+                             annotation_file='/home/ywan1084/Documents/Github/2470_untitled/data/coco/annotations/ood_test.json',preprocess_test = process_test,
+                             batch_size = batch_size,
+                             OOD=True).test_loader,
         }
     
-        
-    test_loader = dataset.test_loader  
+    print('Dataset processed!')
+    test_loader = dataset.test_loader
 
     model = vit_class.cuda()
     devices = list(range(torch.cuda.device_count()))
@@ -60,6 +74,7 @@ def infer(args, pth_dir, epoch, model_type='ViT-B-32'):
     model = torch.nn.DataParallel(model, device_ids=devices)
    
     id_lis_epoch, ood_lis_epoch = cal_all_metric(test_loader, model, epoch, test_dataset)
+    # id_lis_epoch, ood_lis_epoch = cal_all_metric(test_dataset, model, epoch, test_dataset)
     
     return ood_lis_epoch
     
@@ -68,24 +83,38 @@ def cal_all_metric(id_dataset, model, epoch, ood_dataset=None, flag = True):
     model.eval()
     pred_lis = []
     gt_lis = []
+    top5_pred_lis=[]
     
+
     ind_logits, ind_prob, ind_energy = [], [], []
     if flag:
         ind_ctw, ind_atd = [], []
     res = []
     with torch.no_grad():
         for i, batch in tqdm(enumerate(id_dataset)):
+            
             batch = maybe_dictionarize(batch)
+            print(i,'batch size:',len(batch['labels']))
             inputs = batch["images"].cuda()
             labels = batch['labels'].cuda()
             logits, logits_no, _ = model(inputs)
             
             pred_lis += list(torch.argmax(logits, -1).detach().cpu().numpy())
             gt_lis += list(labels.detach().cpu().numpy())
+
+            top5_pred = torch.topk(logits, 5, dim=-1)[1].detach().cpu().numpy()
+            top5_pred_lis += list(top5_pred)
+
             
             ind_logits += list(max_logit_score(logits))
             ind_prob += list(msp_score(logits))
             ind_energy += list(energy_score(logits))
+            def top_k_accuracy(gt, pred, k=5):
+                correct = 0
+                for i in range(len(gt)):
+                    if gt[i] in pred[i][:k]:
+                        correct += 1
+                return correct / len(gt)
             
             if flag:
                 idex = torch.argmax(logits, -1).unsqueeze(-1)
@@ -139,14 +168,19 @@ def cal_all_metric(id_dataset, model, epoch, ood_dataset=None, flag = True):
                 
             
     pred_lis = np.array(pred_lis)
+    top5_pred_lis = np.array(top5_pred_lis)
     gt_lis = np.array(gt_lis)
     acc = Acc(gt_lis, pred_lis)
+    top_5_acc = top_k_accuracy(gt_lis, top5_pred_lis, k=5)
     
     id_lis_epoch = [[epoch, acc]]
     ood_lis_epoch = res
     print(id_lis_epoch)
+    print(f"Top-5 Accuracy: {top_5_acc * 100:.2f}%")
     for lis in ood_lis_epoch:
         print(lis)
+    print('gt_lis',gt_lis)
+    print(len(list(set(gt_lis))))
     return id_lis_epoch, ood_lis_epoch
 def cal_auc_fpr(ind_conf, ood_conf):
     conf = np.concatenate((ind_conf, ood_conf))
@@ -169,9 +203,8 @@ def cal_fpr_recall(ind_conf, ood_conf, tpr=0.95):
 if __name__ == '__main__':
     args = parse_arguments()
     
-    #pth_dir = './logs/2023_08_24-00_02_18-model_ViT-B-32-lr_0.0003-b_512-j_4-p_amp'
-    pth_dir = './logs/2024_4_19-00_00_00-model_ViT-B-16-lr_0.0003-b_512-j_4-p_amp'
-    
+    pth_dir = '/home/ywan1084/Documents/Github/2470_untitled/src/logs/2024_04_28-22_11_48-model_ViT-B-16-lr_0.0003-b_32-j_1-p_amp'
+
     header_ood = ['epoch', 'method', 'oodset', 'AUROC', 'FPR@95']
     ood_lis = []
     if "ViT-B-16" in pth_dir:
@@ -180,8 +213,10 @@ if __name__ == '__main__':
         model_type = "ViT-B-32"
     elif "ViT-L-14" in pth_dir:
         model_type = "ViT-L-14"
-    for i in range(10, 11):    ### evaluate the model of the 10-th epoch.
+    for i in range(1,11):    ### evaluate the model of the 10-th epoch.
         ood_lis += infer(args, pth_dir, i, model_type=model_type)
+
         
     df = pd.DataFrame(ood_lis, columns=header_ood)
+
     df.to_csv(os.path.join(pth_dir, 'ood_metric_.csv'), index=False)

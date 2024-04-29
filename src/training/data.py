@@ -8,7 +8,7 @@ import sys
 import time
 from dataclasses import dataclass
 from multiprocessing import Value
-
+from torchvision import transforms
 import braceexpand
 import numpy as np
 import pandas as pd
@@ -20,14 +20,16 @@ from torch.utils.data import Dataset, DataLoader, SubsetRandomSampler, IterableD
 from torch.utils.data.distributed import DistributedSampler
 from webdataset.filters import _shuffle
 from webdataset.tariterators import base_plus_ext, url_opener, tar_file_expander, valid_sample
-
+from torch.utils.data._utils.collate import default_collate
+from pycocotools.coco import COCO
+from torch.utils.data import DataLoader, Dataset, distributed
 try:
     import horovod.torch as hvd
 except ImportError:
     hvd = None
 
 from open_clip import tokenize#, word_tokenize
-
+from tuning_util import COCODataset,COCODataset_RPNClipN
 
 class CsvDataset(Dataset):
     def __init__(self, input_filename, transforms, img_key, caption_key, sep="\t"):
@@ -356,6 +358,8 @@ def get_wds_dataset(args, preprocess_img, is_train, epoch=0, floor=False):
         if not resampled:
             assert num_shards >= args.workers * args.world_size, 'number of shards must be >= total workers'
         # roll over and repeat a few samples to get same number of full batches on each node
+        
+        # num_samples, num_shards = get_dataset_size(input_shards)
         round_fn = math.floor if floor else math.ceil
         global_batch_size = args.batch_size * args.world_size
         num_batches = round_fn(num_samples / global_batch_size)
@@ -396,6 +400,134 @@ def get_wds_dataset(args, preprocess_img, is_train, epoch=0, floor=False):
 
     return DataInfo(dataloader=dataloader, shared_epoch=shared_epoch)
 
+def get_coco_dataset(args, preprocess_img, is_train, epoch=0,floor=False):
+    
+    resampled = getattr(args, 'dataset_resampled', False) and is_train
+    shared_epoch = SharedEpoch(epoch=epoch) 
+    dataset = COCODataset(
+        img_dir=args.train_data if is_train else args.val_data,
+        annotation_file=args.train_ann_file if is_train else args.val_ann_file,
+        transform=preprocess_img,
+        is_train=is_train
+    )
+    if is_train:
+        # if not resampled:
+            # assert num_shards >= args.workers * args.world_size,# 'number of shards must be >= total workers'
+        #roll over and repeat a few samples to get same number of full batches on each node
+        
+        # num_samples, num_shards = get_dataset_size(input_shards)
+        num_samples = len(dataset)
+        round_fn = math.floor if floor else math.ceil
+        global_batch_size = args.batch_size * args.world_size
+        num_batches = round_fn(num_samples / global_batch_size)
+        num_workers = max(1, args.workers)
+        num_worker_batches = round_fn(num_batches / num_workers)  # per dataloader worker
+        num_batches = num_worker_batches * num_workers
+        num_samples = num_batches * global_batch_size
+        # dataset = dataset.with_epoch(num_worker_batches)  # each worker is iterating over this
+    else:
+        # last batches are partial, eval is done on single (master) node
+        num_batches = math.ceil(len(dataset) / args.batch_size)
+        num_samples = len(dataset)
+    
+    
+    if args.distributed:
+        sampler = distributed.DistributedSampler(dataset,shuffle=True)
+        sampler.set_epoch(epoch)
+        shuffle = False
+    else:
+        sampler = None
+        shuffle = True
+
+    dataloader = DataLoader(
+        dataset,
+        batch_size=args.batch_size,
+        shuffle=shuffle,
+        sampler=sampler,
+        num_workers=args.workers,
+        pin_memory=True
+    )
+
+    
+
+    # 将一些有用的信息添加到DataLoader实例中
+    dataloader.num_batches = num_batches
+    dataloader.num_samples = num_samples
+
+    return DataInfo(dataloader=dataloader, shared_epoch=shared_epoch,sampler=sampler)
+    
+def get_coco_dataset_rpnClipN(args, preprocess_img, is_train, epoch=0,floor=False):
+    
+    resampled = getattr(args, 'dataset_resampled', False) and is_train
+    shared_epoch = SharedEpoch(epoch=epoch) 
+    dataset = COCODataset_RPNClipN(
+        img_dir=args.train_data if is_train else args.val_data,
+        annotation_file=args.train_ann_file if is_train else args.val_ann_file,
+        transform=preprocess_img,
+        is_train=is_train
+    )
+    if is_train:
+        # if not resampled:
+            # assert num_shards >= args.workers * args.world_size,# 'number of shards must be >= total workers'
+        #roll over and repeat a few samples to get same number of full batches on each node
+        
+        # num_samples, num_shards = get_dataset_size(input_shards)
+        num_samples = len(dataset)
+        round_fn = math.floor if floor else math.ceil
+        global_batch_size = args.batch_size * args.world_size
+        num_batches = round_fn(num_samples / global_batch_size)
+        num_workers = max(1, args.workers)
+        num_worker_batches = round_fn(num_batches / num_workers)  # per dataloader worker
+        num_batches = num_worker_batches * num_workers
+        num_samples = num_batches * global_batch_size
+        # dataset = dataset.with_epoch(num_worker_batches)  # each worker is iterating over this
+    else:
+        # last batches are partial, eval is done on single (master) node
+        num_batches = math.ceil(len(dataset) / args.batch_size)
+        num_samples = len(dataset)
+    
+    
+    if args.distributed:
+        sampler = distributed.DistributedSampler(dataset,shuffle=True)
+        sampler.set_epoch(epoch)
+        shuffle = False
+    else:
+        sampler = None
+        shuffle = True
+    def custom_collate_fn(batch):
+        batch_images = []
+        batch_bboxes_info = {'bboxes': [], 'texts': [],'bbox_labels':[],'original_images':[]}
+        
+        for data in batch:
+            image, bboxes_info = data
+            batch_images.append(image)
+            batch_bboxes_info['bboxes'].append(bboxes_info['bboxes'])
+            batch_bboxes_info['texts'].append(bboxes_info['texts'])
+            batch_bboxes_info['bbox_labels'].append(bboxes_info['bbox_labels'])
+            batch_bboxes_info['original_images'].append(bboxes_info['original_image'])
+        
+        # Stack images as they should have consistent dimensions
+        batch_images = default_collate(batch_images)
+    
+        return batch_images, batch_bboxes_info
+    dataloader = DataLoader(
+        dataset,
+        batch_size=args.batch_size,
+        shuffle=shuffle,
+        sampler=sampler,
+        num_workers=args.workers,
+        pin_memory=True,
+        collate_fn=custom_collate_fn
+    )
+
+    
+
+    # 将一些有用的信息添加到DataLoader实例中
+    dataloader.num_batches = num_batches
+    dataloader.num_samples = num_samples
+
+    return DataInfo(dataloader=dataloader, shared_epoch=shared_epoch,sampler=sampler)
+
 
 def get_csv_dataset(args, preprocess_fn, is_train, epoch=0):
     input_filename = args.train_data if is_train else args.val_data
@@ -432,13 +564,17 @@ def get_dataset_fn(data_path, dataset_type):
         return get_csv_dataset
     elif dataset_type == "auto":
         ext = data_path.split('.')[-1]
-        if ext in ['csv', 'tsv']:
+        if ext in ['csv', 'tsv']: 
             return get_csv_dataset
         elif ext in ['tar']:
             return get_wds_dataset
         else:
             raise ValueError(
                 f"Tried to figure out dataset type, but failed for extension {ext}.")
+    elif dataset_type=="COCO":
+        return get_coco_dataset
+    elif dataset_type=="COCO_rpnClipN":
+        return get_coco_dataset_rpnClipN
     else:
         raise ValueError(f"Unsupported dataset type: {dataset_type}")
     
