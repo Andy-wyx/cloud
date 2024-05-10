@@ -103,7 +103,7 @@ We also visualize our own RPN results here:
 </p>
 
 
-## :book:Results & Future Work 
+## :book:Other Results & Future Work 
 Refer to our [report](https://docs.google.com/document/d/1k0BcnrnMjDZfE_vwAiLpe5KyqjaywVXNd_452LeZfjM/edit?usp=sharing)
 
 ## :beers:Acknowledge
