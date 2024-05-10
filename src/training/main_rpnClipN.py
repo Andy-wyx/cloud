@@ -204,11 +204,43 @@ def main():
     from torchvision.models.detection import fasterrcnn_resnet50_fpn
     resnet_model = fasterrcnn_resnet50_fpn(pretrained=True)
     # resnet_model.to(args.device)
-    #Freeze backbone in any case
     backbone =resnet_model.backbone.to(device)
-    # nn.Sequential(*list(resnet_model.backbone.children())[:-2])
-    model = CLIPWithRPN(clip_model, rpn_model,backbone) 
+    for param in backbone.parameters():
+        param.requires_grad = False 
+
+
     
+    
+    
+    
+
+    # optionally resume from a checkpoint
+    start_epoch = 0
+    if args.resume is not None:
+        if os.path.isfile(args.resume):
+            checkpoint = torch.load(args.resume, map_location='cpu')
+            if 'epoch' in checkpoint:
+                # resuming a train checkpoint w/ epoch and optimizer state
+                start_epoch = checkpoint["epoch"]
+                sd = checkpoint["state_dict"]
+                if not args.distributed and next(iter(sd.items()))[0].startswith('module'):
+                    sd = {k[len('module.'):]: v for k, v in sd.items()}
+                clip_model.load_state_dict(sd)
+                if optimizer is not None:
+                    optimizer.load_state_dict(checkpoint["optimizer"])
+                if scaler is not None and 'scaler' in checkpoint:
+                    scaler.load_state_dict(checkpoint['scaler'])
+                logging.info(f"=> resuming checkpoint '{args.resume}' (epoch {start_epoch})")
+            else:
+                # loading a bare (model only) checkpoint for fine-tune or evaluation
+                clip_model.load_state_dict(checkpoint)
+                logging.info(f"=> loaded checkpoint '{args.resume}' (epoch {start_epoch})")
+        else:
+            logging.info("=> no checkpoint found at '{}'".format(args.resume))
+
+        # nn.Sequential(*list(resnet_model.backbone.children())[:-2])
+    model = CLIPWithRPN(clip_model, rpn_model,backbone,preprocess_train,preprocess_val,train_rpn=True) 
+   
     if is_master(args):
         logging.info("Model:")
         logging.info(f"{str(model)}")
@@ -313,8 +345,11 @@ def main():
             checkpoint_dict = {
                 "epoch": completed_epoch,
                 "name": args.name,
-                "state_dict": model.state_dict(),
+                "state_dict": model.module.clip_model.state_dict(),
                 "optimizer": optimizer.state_dict(),
+                "rpn_state_dict":model.module.rpn.state_dict(),
+                
+                
             }
             if scaler is not None:
                 checkpoint_dict["scaler"] = scaler.state_dict()
