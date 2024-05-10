@@ -672,7 +672,7 @@ class CLIPWithRPN(nn.Module):
         images_list = ImageList(images, image_sizes)
         # backbone_features = F.normalize(backbone_features, dim=-1)
         proposals, proposal_losses = self.rpn(images_list, backbone_features, targets=bbox_targets)
-        valid_cropped_images,valid_labels,gt_cropped_images,gt_labels=get_valid_cropped_images_texts(images,proposals,original_images,bbox_targets,IoU_threshold=0.5)
+        valid_cropped_images,valid_labels,gt_cropped_images,gt_labels,_=get_valid_cropped_images_texts(images,proposals,original_images,bbox_targets,IoU_threshold=0.5)
         # image_features, text_features = self.clip_model.encode_features_and_text(features, texts)
         # combine target_bbox or not?
         # gt_boxes = [target['boxes'] for target in bbox_targets]
@@ -709,8 +709,10 @@ class CLIPWithRPN(nn.Module):
         if self.training:
             return image_features, text_features, text_features_no,logit_scale,proposal_losses
         return image_features, text_features,text_features_no,logit_scale
+    
+
 def labels_to_descriptions_COCO(labels):
-    category_dict={1: 'person', 2: 'bicycle', 3: 'car', 4: 'motorcycle', 5: 'airplane', 6: 'bus', 7: 'train', 8: 'truck', 9: 'boat', 10: 'traffic light', 11: 'fire hydrant', 12: 'stop sign', 13: 'parking meter', 14: 'bench', 15: 'bird', 16: 'cat', 17: 'dog', 18: 'horse', 19: 'sheep', 20: 'cow', 21: 'elephant', 22: 'bear', 23: 'zebra', 24: 'giraffe', 25: 'backpack', 26: 'umbrella', 27: 'handbag', 28: 'tie', 29: 'suitcase', 30: 'frisbee', 31: 'skis', 32: 'snowboard', 33: 'sports ball', 34: 'kite', 35: 'baseball bat', 36: 'baseball glove', 37: 'skateboard', 38: 'surfboard', 39: 'tennis racket', 40: 'bottle', 41: 'wine glass', 42: 'cup', 43: 'fork', 44: 'knife', 45: 'spoon', 46: 'bowl', 47: 'banana', 48: 'apple', 49: 'sandwich', 50: 'orange', 51: 'broccoli', 52: 'carrot', 53: 'hot dog', 54: 'pizza', 55: 'donut', 56: 'cake', 57: 'chair', 58: 'couch', 59: 'potted plant', 60: 'bed', 61: 'dining table', 62: 'toilet', 63: 'tv', 64: 'laptop', 65: 'mouse', 66: 'remote', 67: 'keyboard', 68: 'cell phone', 69: 'microwave', 70: 'oven', 71: 'toaster', 72: 'sink', 73: 'refrigerator', 74: 'book', 75: 'clock', 76: 'vase', 77: 'scissors', 78: 'teddy bear', 79: 'hair drier', 80: 'toothbrush'}
+    category_dict={0: 'person', 1: 'bicycle', 2: 'car', 3: 'motorcycle', 4: 'airplane', 5: 'bus', 6: 'train', 7: 'truck', 8: 'boat', 9: 'traffic light', 10: 'fire hydrant', 11: 'stop sign', 12: 'parking meter', 13: 'bench', 14: 'bird', 15: 'cat', 16: 'dog', 17: 'horse', 18: 'sheep', 19: 'cow', 20: 'elephant', 21: 'bear', 22: 'zebra', 23: 'giraffe', 24: 'backpack', 25: 'umbrella', 26: 'handbag', 27: 'tie', 28: 'suitcase', 29: 'frisbee', 30: 'skis', 31: 'snowboard', 32: 'sports ball', 33: 'kite', 34: 'baseball bat', 35: 'baseball glove', 36: 'skateboard', 37: 'surfboard', 38: 'tennis racket', 39: 'bottle', 40: 'wine glass', 41: 'cup', 42: 'fork', 43: 'knife', 44: 'spoon', 45: 'bowl', 46: 'banana', 47: 'apple', 48: 'sandwich', 49: 'orange', 50: 'broccoli', 51: 'carrot', 52: 'hot dog', 53: 'pizza', 54: 'donut', 55: 'cake', 56: 'chair', 57: 'couch', 58: 'potted plant', 59: 'bed', 60: 'dining table', 61: 'toilet', 62: 'tv', 63: 'laptop', 64: 'mouse', 65: 'remote', 66: 'keyboard', 67: 'cell phone', 68: 'microwave'}
     descriptions = []
     for label in labels:
         category_name = category_dict.get(label, "unknown")  # 使用 get 避免 KeyError
@@ -722,6 +724,7 @@ def get_valid_cropped_images_texts(images, proposals,original_images, targets, I
     gt_cropped_images=[]
     gt_labels=[]
     # Loop over each image and its corresponding proposals and targets
+    valid_proposals_list = []
     for i, (image, image_proposals, image_targets) in enumerate(zip(original_images, proposals, targets)):
         # Extract target bounding boxes and labels for this image
         target_boxes = image_targets['boxes']
@@ -738,6 +741,7 @@ def get_valid_cropped_images_texts(images, proposals,original_images, targets, I
 
         # Filter valid proposals and corresponding max IoU indices
         valid_proposals = image_proposals[valid_proposal_indices]
+        valid_proposals_list.append(valid_proposals)
         corresponding_target_indices = max_indices[valid_proposal_indices]
         from torchvision import transforms
         from torchvision.transforms.functional import InterpolationMode
@@ -776,7 +780,7 @@ def get_valid_cropped_images_texts(images, proposals,original_images, targets, I
             
             
 
-    return valid_cropped_images, valid_labels,gt_cropped_images,gt_labels
+    return valid_cropped_images, valid_labels,gt_cropped_images,gt_labels,valid_proposals_list
     
 def convert_weights_to_fp16(model: nn.Module):
     """Convert applicable model parameters to fp16"""

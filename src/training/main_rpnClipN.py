@@ -196,9 +196,12 @@ def main():
     from torchvision.models.detection import fasterrcnn_resnet50_fpn
     resnet_model = fasterrcnn_resnet50_fpn(pretrained=True)
     # resnet_model.to(args.device)
+    #Freeze backbone in any case
     backbone =resnet_model.backbone.to(device)
+    for param in backbone.parameters():
+        param.requires_grad = False
     # nn.Sequential(*list(resnet_model.backbone.children())[:-2])
-    model = CLIPWithRPN(clip_model, rpn_model,backbone) 
+    model = CLIPWithRPN(clip_model, rpn_model,backbone)
     
     if is_master(args):
         logging.info("Model:")
@@ -332,8 +335,10 @@ def main():
             checkpoint_dict = {
                 "epoch": completed_epoch,
                 "name": args.name,
-                "state_dict": model.state_dict(),
+                "state_dict": model.clip_model.state_dict(),
                 "optimizer": optimizer.state_dict(),
+                "rpn":model.rpn.state_dict(),
+                "backbone":model.backbone.state_dict(),
             }
             if scaler is not None:
                 checkpoint_dict["scaler"] = scaler.state_dict()

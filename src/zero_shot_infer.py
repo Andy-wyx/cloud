@@ -30,14 +30,14 @@ def msp_score(logits):
 def energy_score(logits):
     return to_np(torch.logsumexp(logits, -1)) #  logarithm of the sum of exponentials of input elements where lower energy values can indicate higher confidence
 
-def infer(args, pth_dir, epoch, model_type='ViT-B-16'):
+def infer(args, pth_dir, epoch, model_type='ViT-B-16',vis=True):
     pth_name = os.path.join("checkpoints", "epoch_" + str(epoch) + ".pt")
     pre_train = os.path.join(pth_dir, pth_name)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     batch_size = 512
     train_data = "imagenet"
     # dataset = ImageNet()
-    dataset=COCODataset(img_dir="/home/ywan1084/Documents/Github/2470_untitled/data/coco/val2017",annotation_file="/home/ywan1084/Documents/Github/2470_untitled/data/coco/annotations/id_pretrain.json",is_train=False, transform=None)
+    dataset=COCODataset(img_dir="/home/ywan1084/Documents/Github/cloud/data/coco/val2017",annotation_file="/home/ywan1084/Documents/Github/cloud/data/coco/annotations/id_pretrain.json",is_train=False, transform=None)
     
     vit_class, process_train, process_test = load_model(model_type=model_type, pre_train=pre_train, dataset=dataset, device=device)
     # vit_class, process_train, process_test = load_model(model_type=model_type, pre_train=pre_train, dataset=None, device=device)
@@ -55,12 +55,12 @@ def infer(args, pth_dir, epoch, model_type='ViT-B-16'):
     #         "Places": Places(preprocess_test = process_test, batch_size = batch_size).test_loader,
     #     }
     if train_data == "imagenet":
-        dataset = COCO_val(img_dir='/home/ywan1084/Documents/Github/2470_untitled/data/coco/val2017',
-                           annotation_file='/home/ywan1084/Documents/Github/2470_untitled/data/coco/annotations/id_test.json',preprocess_test = process_test,
+        dataset = COCO_val(img_dir='/home/ywan1084/Documents/Github/cloud/data/coco/val2017',
+                           annotation_file='/home/ywan1084/Documents/Github/cloud/data/coco/annotations/id_test.json',preprocess_test = process_test,
                            batch_size = batch_size,)
         test_dataset = {
-            "COCO_ood": COCO_val(img_dir='/home/ywan1084/Documents/Github/2470_untitled/data/coco/val2017',
-                             annotation_file='/home/ywan1084/Documents/Github/2470_untitled/data/coco/annotations/ood_test.json',preprocess_test = process_test,
+            "COCO_ood": COCO_val(img_dir='/home/ywan1084/Documents/Github/cloud/data/coco/val2017',
+                             annotation_file='/home/ywan1084/Documents/Github/cloud/data/coco/annotations/ood_test.json',preprocess_test = process_test,
                              batch_size = batch_size,
                              OOD=True).test_loader,
         }
@@ -75,6 +75,8 @@ def infer(args, pth_dir, epoch, model_type='ViT-B-16'):
    
     id_lis_epoch, ood_lis_epoch = cal_all_metric(test_loader, model, epoch, test_dataset)
     # id_lis_epoch, ood_lis_epoch = cal_all_metric(test_dataset, model, epoch, test_dataset)
+    if vis:
+        visualize(test_loader, model, pth_dir,test_dataset)
     
     return ood_lis_epoch
     
@@ -90,6 +92,8 @@ def cal_all_metric(id_dataset, model, epoch, ood_dataset=None, flag = True):
     if flag:
         ind_ctw, ind_atd = [], []
     res = []
+
+
     with torch.no_grad():
         for i, batch in tqdm(enumerate(id_dataset)):
             
@@ -99,7 +103,8 @@ def cal_all_metric(id_dataset, model, epoch, ood_dataset=None, flag = True):
             labels = batch['labels'].cuda()
             logits, logits_no, _ = model(inputs)
             
-            pred_lis += list(torch.argmax(logits, -1).detach().cpu().numpy())
+            batch_pred = list(torch.argmax(logits, -1).detach().cpu().numpy())
+            pred_lis += batch_pred
             gt_lis += list(labels.detach().cpu().numpy())
 
             top5_pred = torch.topk(logits, 5, dim=-1)[1].detach().cpu().numpy()
@@ -122,8 +127,10 @@ def cal_all_metric(id_dataset, model, epoch, ood_dataset=None, flag = True):
                 yesno = torch.softmax(yesno, dim=-1)[:,:,0]
                 yesno_s = torch.gather(yesno, dim=1, index=idex)
                 ind_ctw += list(yesno_s.detach().cpu().numpy())
-                ind_atd += list((yesno * torch.softmax(logits, -1)).sum(1).detach().cpu().numpy())
-                    
+                batch_ind_atd = list((yesno * torch.softmax(logits, -1)).sum(1).detach().cpu().numpy())
+                ind_atd += batch_ind_atd
+                
+
                 
             
         for name, ood_data in ood_dataset.items():
@@ -141,13 +148,15 @@ def cal_all_metric(id_dataset, model, epoch, ood_dataset=None, flag = True):
                 ood_energy += list(energy_score(logits))
             
                 if flag:
-                    idex = torch.argmax(logits, -1).unsqueeze(-1)
+                    idex = torch.argmax(logits, -1).unsqueeze(-1) #j
                     yesno = torch.cat([ logits.unsqueeze(-1), logits_no.unsqueeze(-1) ], -1)
                     yesno = torch.softmax(yesno, dim=-1)[:,:,0]
                     yesno_s = torch.gather(yesno, dim=1, index=idex)
 
                     ood_ctw += list(yesno_s.detach().cpu().numpy())
-                    ood_atd += list((yesno * torch.softmax(logits, -1) ).sum(1).detach().cpu().numpy())
+                    batch_ood_atd = list((yesno * torch.softmax(logits, -1) ).sum(1).detach().cpu().numpy())
+                    ood_atd += batch_ood_atd
+                    
                     
                  
             #### MSP
@@ -179,9 +188,117 @@ def cal_all_metric(id_dataset, model, epoch, ood_dataset=None, flag = True):
     print(f"Top-5 Accuracy: {top_5_acc * 100:.2f}%")
     for lis in ood_lis_epoch:
         print(lis)
-    print('gt_lis',gt_lis)
-    print(len(list(set(gt_lis))))
+    
+
     return id_lis_epoch, ood_lis_epoch
+
+def visualize(id_dataset, model, target_folder_name,ood_dataset=None, flag = True):
+    model.eval()
+    if flag:
+        ind_ctw, ind_atd = [], []
+    
+    # three lists for storing values for visualization
+    # classes = [] # top1 predicted class id
+    # id_scores = []
+    # ood_scores = []
+    classes = []
+    ind_atd_values = []
+    ood_atd_values = []
+
+
+    with torch.no_grad():
+        for i, batch in tqdm(enumerate(id_dataset)):
+            
+            batch = maybe_dictionarize(batch)
+            print(i,'batch size:',len(batch['labels']))
+            inputs = batch["images"].cuda()
+            labels = batch['labels'].cuda()
+            logits, logits_no, _ = model(inputs)
+            
+            batch_pred = list(torch.argmax(logits, -1).detach().cpu().numpy())
+            classes.extend(batch_pred)
+            
+            if flag:
+                idex = torch.argmax(logits, -1).unsqueeze(-1)
+                yesno = torch.cat([ logits.unsqueeze(-1), logits_no.unsqueeze(-1) ], -1)
+                yesno = torch.softmax(yesno, dim=-1)[:,:,0]
+                yesno_s = torch.gather(yesno, dim=1, index=idex)
+                batch_ind_ctw = list(yesno_s.detach().cpu().numpy())
+                ind_ctw += batch_ind_ctw
+                batch_ind_atd = list((yesno * torch.softmax(logits, -1)).sum(1).detach().cpu().numpy())
+                ind_atd += batch_ind_atd
+                ind_atd_values.extend(batch_ind_ctw)    
+            
+        for name, ood_data in ood_dataset.items():
+            ood_logits, ood_prob, ood_energy = [], [], []
+            if flag:
+                ood_ctw, ood_atd = [], []
+            for i, batch in tqdm(enumerate(ood_data)):
+                batch = maybe_dictionarize(batch)
+                inputs = batch["images"].cuda()
+                labels = batch['labels'].cuda()
+                logits, logits_no, _ = model(inputs)
+                
+                ood_logits += list(max_logit_score(logits))
+                ood_prob += list(msp_score(logits))
+                ood_energy += list(energy_score(logits))
+            
+                if flag:
+                    idex = torch.argmax(logits, -1).unsqueeze(-1) #j
+                    yesno = torch.cat([ logits.unsqueeze(-1), logits_no.unsqueeze(-1) ], -1)
+                    yesno = torch.softmax(yesno, dim=-1)[:,:,0]
+                    yesno_s = torch.gather(yesno, dim=1, index=idex)
+
+                    batch_ood_ctw = list(yesno_s.detach().cpu().numpy())
+                    ood_ctw +=batch_ood_ctw
+                    batch_ood_atd = list((yesno * torch.softmax(logits, -1) ).sum(1).detach().cpu().numpy())
+                    ood_atd += batch_ood_atd
+                    ood_atd_values.extend(batch_ood_ctw)
+    
+    
+    # classes
+    # id_scores
+    # ood_scores
+    scores_json = {
+    'classes':classes,
+    'id_scores': ind_atd_values,
+    'ood_scores': ood_atd_values
+}
+    # fix serizliation issue
+    # print(type(scores_json['classes']))
+    # print(type(scores_json['classes'][0]))
+    # print(type(scores_json['id_scores']))
+    # print(type(scores_json['id_scores'][0]))
+    # print(type(scores_json['ood_scores']))
+    # print(type(scores_json['ood_scores'][0]))
+    # print('after')
+    def convert_numpy(obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, list):  
+            return [convert_numpy(item) for item in obj] 
+        else:
+            return obj
+
+    # Apply the conversion function to each item in the dictionary
+    scores_json_converted = {k: convert_numpy(v) for k, v in scores_json.items()}
+    # print(type(scores_json_converted['classes']))
+    # print(type(scores_json_converted['classes'][0]))
+    # print(type(scores_json_converted['id_scores']))
+    # print(type(scores_json_converted['id_scores'][0]))
+    # print(type(scores_json_converted['ood_scores']))
+    # print(type(scores_json_converted['ood_scores'][0]))
+    # Write to file
+
+    import json
+    target_path = os.path.join(target_folder_name, "vis.json")
+    with open(target_path, 'w') as f:
+        json.dump(scores_json_converted, f)
+
 def cal_auc_fpr(ind_conf, ood_conf):
     conf = np.concatenate((ind_conf, ood_conf))
     ind_indicator = np.concatenate((np.ones_like(ind_conf), np.zeros_like(ood_conf)))
@@ -203,7 +320,7 @@ def cal_fpr_recall(ind_conf, ood_conf, tpr=0.95):
 if __name__ == '__main__':
     args = parse_arguments()
     
-    pth_dir = '/home/ywan1084/Documents/Github/2470_untitled/src/logs/2024_04_28-23_39_47-model_ViT-B-16-lr_0.0003-b_32-j_1-p_amp'
+    pth_dir = '/home/ywan1084/Documents/Github/cloud/src/logs/2024_05_03-14_41_02-model_ViT-B-16-lr_0.0003-b_32-j_1-p_amp'
 
     header_ood = ['epoch', 'method', 'oodset', 'AUROC', 'FPR@95']
     ood_lis = []
@@ -213,10 +330,13 @@ if __name__ == '__main__':
         model_type = "ViT-B-32"
     elif "ViT-L-14" in pth_dir:
         model_type = "ViT-L-14"
-    for i in range(10,11):    ### evaluate the model of the 10-th epoch.
-        ood_lis += infer(args, pth_dir, i, model_type=model_type)
+    start,end = 10,11
+    for i in range(start,end):    ### evaluate the model of the 10-th epoch.
+        if i==end-1:
+            ood_lis += infer(args, pth_dir, i, model_type=model_type,vis=False)
+        else: 
+            ood_lis += infer(args, pth_dir, i, model_type=model_type,vis=False)
 
-        
     df = pd.DataFrame(ood_lis, columns=header_ood)
 
     df.to_csv(os.path.join(pth_dir, 'ood_metric_.csv'), index=False)

@@ -16,6 +16,7 @@ import shutil
 from torch.utils.data import DataLoader, Dataset
 from PIL import Image
 from pycocotools.coco import COCO
+from torch.utils.data._utils.collate import default_collate
 
 from open_clip import tokenize
 def assign_learning_rate(param_group, new_lr):
@@ -197,6 +198,38 @@ class COCO_val:
             self.classnames = self.test_dataset.classes
         else:
             self.classnames=None
+class COCO_val_cloud:
+    def __init__(self, img_dir,annotation_file,preprocess_test,
+                 batch_size=128,
+                 num_workers=16,
+                 classnames=None,
+                 OOD=False):
+        # img_dir='/data/kangyuzhu/coco_val/val2017',
+        # annotation_file='/data/kangyuzhu/coco_val/annotations/instances_val2017.json',
+        def custom_collate_fn(batch):
+            batch_images = []
+            batch_bboxes_info = {'bboxes': [], 'texts': [],'bbox_labels':[],'original_images':[]}
+            
+            for data in batch:
+                image, bboxes_info = data
+                batch_images.append(image)
+                batch_bboxes_info['bboxes'].append(bboxes_info['bboxes'])
+                batch_bboxes_info['texts'].append(bboxes_info['texts'])
+                batch_bboxes_info['bbox_labels'].append(bboxes_info['bbox_labels'])
+                batch_bboxes_info['original_images'].append(bboxes_info['original_image'])
+            
+            # Stack images as they should have consistent dimensions
+            batch_images = default_collate(batch_images)
+        
+            return batch_images, batch_bboxes_info
+        self.test_dataset = COCODataset_RPNClipN(img_dir=img_dir,annotation_file=annotation_file,transform=preprocess_test,)
+        self.test_loader = torch.utils.data.DataLoader(
+            self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers,collate_fn=custom_collate_fn
+        )
+        if not OOD:
+            self.classnames = self.test_dataset.classes
+        else:
+            self.classnames=None
 class iNaturalist:
     def __init__(self, preprocess_test,
                  batch_size=128,
@@ -231,6 +264,18 @@ def maybe_dictionarize(batch):
         batch = {'images': batch[0], 'labels': batch[1]}
     elif len(batch) == 3:
         batch = {'images': batch[0], 'labels': batch[1], 'metadata': batch[2]}
+    else:
+        raise ValueError(f'Unexpected number of elements: {len(batch)}')
+
+    return batch
+
+def maybe_dictionarize4cloud(batch):
+    if isinstance(batch, dict):
+        print("?????")
+        return batch
+
+    if len(batch) == 2:
+        batch = {'image': batch[0], 'bboxes_info': batch[1]}
     else:
         raise ValueError(f'Unexpected number of elements: {len(batch)}')
 
