@@ -58,9 +58,9 @@ def train_one_epoch(model, data, epoch, optimizer, scaler, scheduler, args, tb_w
         use_horovod=args.horovod)
 
     data['train'].set_epoch(epoch)  # set epoch in process safe manner via sampler or shared_epoch
-    if  args.dataset_type=="COCO":
-        sampler=data['train'].sampler
-        sampler.set_epoch(epoch)
+    # if  args.dataset_type=="COCO":
+    #     sampler=data['train'].sampler
+    #     sampler.set_epoch(epoch)
     dataloader = data['train'].dataloader
     num_batches_per_epoch = dataloader.num_batches
     sample_digits = math.ceil(math.log(dataloader.num_samples + 1, 10))
