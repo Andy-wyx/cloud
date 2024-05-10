@@ -1,8 +1,19 @@
-# Enhancing Out-of-Distribution Object Detection with CLIP
+<div align=center>
+<h1> Enhancing Out-of-Distribution Object Detection with CLIP </h1>
+</div>
+<div align=center>
 
-**Group Project of CSCI2470 Deep Learning Spring 24 @ Brown**
+<div align=center>
+<a src="https://img.shields.io/badge/%F0%9F%93%96-Report-red.svg?style=flat-square" href="https://docs.google.com/document/d/1k0BcnrnMjDZfE_vwAiLpe5KyqjaywVXNd_452LeZfjM/edit?usp=sharing">
+<img src="https://img.shields.io/badge/%F0%9F%93%96-Report-red.svg?style=flat-square">
+</a>
 
-**Group members: Kangyu Zhu, Yingwei Song, Xueru Ma, Yuxiang Wang**
+<a src="https://img.shields.io/badge/%F0%9F%8E%A4-Slides-blue.svg?style=flat-square
+" href="https://brown365-my.sharepoint.com/:p:/g/personal/xma75_ad_brown_edu/EWl8KQBX871LmJq8Lz6NoHMBC3KXe2If3L-jqN38WdxD0w?e=iYzHeW&nav=eyJzSWQiOjI1N30">
+<img src="https://img.shields.io/badge/%F0%9F%8E%A4-Slides-blue.svg?style=flat-square
+">
+</a>
+</div>
 
 <p align="center">
   <img src="imgs/main_diagram.jpeg" width=800><br/>
@@ -31,10 +42,6 @@ Results: [ablation_results](https://drive.google.com/drive/folders/1dfPbZx8CwcK3
 * Loss
 * Training strategy
 
-## Analysis 
-
-See the final report: [Link to PDF](TBD)
-
 ## Future Work
 
 **Training & Experiments**
@@ -46,3 +53,5 @@ See the final report: [Link to PDF](TBD)
 
 **Others**
 * visualize the outcomes of the object OOD detection model
+
+**Acknowledge**
