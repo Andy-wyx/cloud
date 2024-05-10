@@ -32,7 +32,16 @@ Our contribution includes:
   <img src="imgs/main_diagram.jpeg" width=800><br/>
 </p>
 
-## Installation
+## :hammer: Installation & Requirements
+```shell
+git clone https://github.com/Andy-wyx/cloud.git
+cd cloud
+conda create -n cloud python=3.9
+conda activate cloud
+pip install -r ./requirements.txt
+conda install pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch
+```
+torch and cudatoolkit version may depend on your GPU Driver version. Refer to [this page](https://pytorch.org/get-started/previous-versions/) for previous versions.
 
 
 ## Prepare Dataset
