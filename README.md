@@ -44,7 +44,7 @@ conda install pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch
 torch and cudatoolkit version may depend on your GPU Driver version. Refer to [this page](https://pytorch.org/get-started/previous-versions/) for previous versions.
 
 
-## Prepare Dataset
+## :computer:Prepare Dataset
 * Step1: download coco dataset from [here](https://cocodataset.org/#download)
 The expected structure is:
 ```
@@ -63,13 +63,18 @@ python data_gen.py
 Side notes:
 - train2017 is better for region-text matching
 - val2017 is suitable for finetuning CLOUD with the feature distance loss. It is also faster for lightweight playing around.
-- if you also want to try traditional OOD dataset e.g. iNaturalist, Textures, Places, SUN. See download instructions [here](https://github.com/deeplearning-wisc/large_scale_ood#out-of-distribution-dataset)
+- if you also want to try traditional OOD datasets e.g. iNaturalist, Textures, Places, SUN. See download instructions [here](https://github.com/deeplearning-wisc/large_scale_ood#out-of-distribution-dataset)
 
-## Visualization
+## :star:Visualization
+<p align="center">
+  <img src="vis1_ood.png" width=400>
+  <img src="vis2_ood.png" width=400><br/>
+</p>
 
 
-## Results & Future Work 
+## :book:Results & Future Work 
 Refer to our [report](https://docs.google.com/document/d/1k0BcnrnMjDZfE_vwAiLpe5KyqjaywVXNd_452LeZfjM/edit?usp=sharing)
 
-**Acknowledge**
+## :beers:Acknowledge
 * [xmed-lab/CLIPN](https://github.com/xmed-lab/CLIPN)
+* [detectron2](https://detectron2.readthedocs.io/en/latest/)
