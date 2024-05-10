@@ -33,7 +33,7 @@ from training.train import train_one_epoch, evaluate
 
 from open_clip.model import CLIPWithRPN
 from torchvision.models.detection.rpn import AnchorGenerator, RPNHead, RegionProposalNetwork
-from training.train import train_one_epoch, evaluate,train_one_epoch_RPNClipN
+from training.train import train_one_epoch, evaluate,train_one_epoch_RPNClipN,train_one_epoch_RPN
 import debugpy
 
 
@@ -184,12 +184,9 @@ def main():
     
     rpn_model = rpn_model.to(args.device)
     
-    # for name, param in rpn_model.named_parameters():
-    #     # if 'head' not in name:  # 冻结除了RPN头之外的所有层
-    #         param.requires_grad = False
-            
-            
-            
+    for name, param in rpn_model.named_parameters():
+        # if 'head' not in name:  # 冻结除了RPN头之外的所有层
+            param.requires_grad = True
     # def load_rpn_weights(rpn, pretrained_model_path):
     #     # Load the entire pre-trained model weights
     #     pretrained_dict = torch.load(pretrained_model_path)
@@ -209,10 +206,15 @@ def main():
         param.requires_grad = False 
 
 
+    for param in clip_model.parameters():
+        param.requires_grad = False 
     
     
     
-    
+    # create optimizer and scaler
+    optimizer = None
+    scaler = None
+   
 
     # optionally resume from a checkpoint
     start_epoch = 0
@@ -239,8 +241,35 @@ def main():
             logging.info("=> no checkpoint found at '{}'".format(args.resume))
 
         # nn.Sequential(*list(resnet_model.backbone.children())[:-2])
-    model = CLIPWithRPN(clip_model, rpn_model,backbone,preprocess_train,preprocess_val,train_rpn=True) 
+    model = CLIPWithRPN(clip_model, rpn_model,backbone,preprocess_train,preprocess_val) 
    
+   
+    if args.train_data:
+        assert not args.trace, 'Cannot train with traced model'
+
+        exclude = lambda n, p: p.ndim < 2 or "bn" in n or "ln" in n or "bias" in n or 'logit_scale' in n
+        include = lambda n, p: not exclude(n, p)
+
+        # named_parameters = list(clip_model.named_parameters())
+        # gain_or_bias_params = [p for n, p in named_parameters if exclude(n, p) and p.requires_grad]
+        # rest_params = [p for n, p in named_parameters if include(n, p) and p.requires_grad]
+
+        optimizer = optim.AdamW(
+            # [
+            #     {"params": gain_or_bias_params, "weight_decay": 0.},
+            #     {"params": rest_params, "weight_decay": args.wd},
+            # ],
+            model.parameters(),
+            lr=args.lr,
+            betas=(args.beta1, args.beta2),
+            eps=args.eps,
+        )
+        if args.horovod:
+            optimizer = hvd.DistributedOptimizer(optimizer, named_parameters=model.named_parameters())
+            hvd.broadcast_parameters(model.state_dict(), root_rank=0)
+            hvd.broadcast_optimizer_state(optimizer, root_rank=0)
+
+        scaler = GradScaler() if args.precision == "amp" else None
     if is_master(args):
         logging.info("Model:")
         logging.info(f"{str(model)}")
@@ -261,35 +290,7 @@ def main():
             ddp_args['static_graph'] = True
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[device], **ddp_args)
 
-    
-    # create optimizer and scaler
-    optimizer = None
-    scaler = None
-    if args.train_data:
-        assert not args.trace, 'Cannot train with traced model'
 
-        exclude = lambda n, p: p.ndim < 2 or "bn" in n or "ln" in n or "bias" in n or 'logit_scale' in n
-        include = lambda n, p: not exclude(n, p)
-
-        named_parameters = list(model.named_parameters())
-        gain_or_bias_params = [p for n, p in named_parameters if exclude(n, p) and p.requires_grad]
-        rest_params = [p for n, p in named_parameters if include(n, p) and p.requires_grad]
-
-        optimizer = optim.AdamW(
-            [
-                {"params": gain_or_bias_params, "weight_decay": 0.},
-                {"params": rest_params, "weight_decay": args.wd},
-            ],
-            lr=args.lr,
-            betas=(args.beta1, args.beta2),
-            eps=args.eps,
-        )
-        if args.horovod:
-            optimizer = hvd.DistributedOptimizer(optimizer, named_parameters=model.named_parameters())
-            hvd.broadcast_parameters(model.state_dict(), root_rank=0)
-            hvd.broadcast_optimizer_state(optimizer, root_rank=0)
-
-        scaler = GradScaler() if args.precision == "amp" else None
     # initialize datasets
     data = get_data(args, (preprocess_train, preprocess_val), epoch=start_epoch)
     assert len(data), 'At least one train or eval dataset must be specified.'
@@ -334,7 +335,7 @@ def main():
         if is_master(args):
             logging.info(f'Start epoch {epoch}')
 
-        train_one_epoch_RPNClipN(model, data, epoch, optimizer, scaler, scheduler, args, writer)
+        train_one_epoch_RPN(model, data, epoch, optimizer, scaler, scheduler, args, writer)
         completed_epoch = epoch + 1
 
         if any(v in data for v in ('val', 'imagenet-val', 'imagenet-v2')):
@@ -348,7 +349,6 @@ def main():
                 "state_dict": model.module.clip_model.state_dict(),
                 "optimizer": optimizer.state_dict(),
                 "rpn_state_dict":model.module.rpn.state_dict(),
-                
                 
             }
             if scaler is not None:

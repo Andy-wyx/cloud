@@ -2,9 +2,9 @@ import logging
 import os
 import random
 from datetime import datetime
-import torch
+
 import numpy as np
-import torch.nn as nn
+import torch
 from torch import optim
 from torch.cuda.amp import GradScaler
 
@@ -29,13 +29,9 @@ from training.distributed import is_master, init_distributed_device, world_info_
 from training.logger import setup_logging
 from training.params import parse_args
 from training.scheduler import cosine_lr
-from training.train import train_one_epoch, evaluate
+from training.train import train_one_epoch, evaluate,train_one_epoch_RPNClipN,train_one_epoch_ClipOnly
 
-from open_clip.model import CLIPWithRPN
-from torchvision.models.detection.rpn import AnchorGenerator, RPNHead, RegionProposalNetwork
-from training.train import train_one_epoch, evaluate,train_one_epoch_RPNClipN
 import debugpy
-
 
 # Enable debugger. Adjust the port as needed.
 # rank = int(os.getenv('RANK', '0'))
@@ -132,7 +128,7 @@ def main():
         logging.info(f'Running with a single process. Device {args.device}.')
 
     random_seed(args.seed, 0)
-    clip_model, preprocess_train, preprocess_val = create_model_and_transforms(
+    model, preprocess_train, preprocess_val = create_model_and_transforms(
         args.model,
         args.pretrained,
         precision=args.precision,
@@ -142,105 +138,22 @@ def main():
         pretrained_image=args.pretrained_image,
         image_mean=args.image_mean,
         image_std=args.image_std,
+        contra_mode=True
     )
-    
     random_seed(args.seed, args.rank)
 
     if args.trace:
-        clip_model = trace_model(model, batch_size=args.batch_size, device=device)
+        model = trace_model(model, batch_size=args.batch_size, device=device)
 
     if args.lock_image:
         # lock image tower as per LiT - https://arxiv.org/abs/2111.07991
-        clip_model.lock_image_tower(
+        model.lock_image_tower(
             unlocked_groups=args.lock_image_unlocked_groups,
             freeze_bn_stats=args.lock_image_freeze_bn_stats)
 
     if args.grad_checkpointing:
-        clip_model.set_grad_checkpointing()
+        model.set_grad_checkpointing()
 
-    
-
-    from torchvision.models.detection.rpn import AnchorGenerator, RPNHead, RegionProposalNetwork
-
-    def create_rpn():
-        anchor_generator = AnchorGenerator(
-            sizes=((32,), (64,), (128,), (256,), (512,)),  # Typical scales for P2 to P6
-            aspect_ratios=((0.5, 1.0, 2.0),) * 5  # Assuming the same aspect ratios for all levels
-        )
-        
-        rpn = RegionProposalNetwork(
-            anchor_generator=anchor_generator,
-            head=RPNHead(256, anchor_generator.num_anchors_per_location()[0]),
-            fg_iou_thresh=0.7,
-            bg_iou_thresh=0.3,
-            batch_size_per_image=256,
-            positive_fraction=0.5,
-            pre_nms_top_n={'training': 2000, 'testing': 1000},
-            post_nms_top_n={'training': 2000, 'testing': 1000},
-            nms_thresh=0.7
-        )
-        return rpn
-    rpn_model = create_rpn() 
-    
-    rpn_model = rpn_model.to(args.device)
-    
-    # for name, param in rpn_model.named_parameters():
-    #     # if 'head' not in name:  # 冻结除了RPN头之外的所有层
-    #         param.requires_grad = False
-            
-            
-            
-    # def load_rpn_weights(rpn, pretrained_model_path):
-    #     # Load the entire pre-trained model weights
-    #     pretrained_dict = torch.load(pretrained_model_path)
-        
-    #     # Extract only the keys related to the RPN from the pre-trained model
-    #     rpn_dict = {k: v for k, v in pretrained_dict.items() if 'rpn' in k}
-        
-    #     # Load the RPN weights
-    #     rpn.load_state_dict(rpn_dict, strict=False)
-    #     print("Loaded RPN weights from:", pretrained_model_path)
-    # load_rpn_weights(rpn_model, 'path_to_pretrained_faster_rcnn_model.pth')
-    from torchvision.models.detection import fasterrcnn_resnet50_fpn
-    resnet_model = fasterrcnn_resnet50_fpn(pretrained=True)
-    # resnet_model.to(args.device)
-    backbone =resnet_model.backbone.to(device)
-    for param in backbone.parameters():
-        param.requires_grad = False 
-
-
-    
-    
-    
-    
-
-    # optionally resume from a checkpoint
-    start_epoch = 0
-    if args.resume is not None:
-        if os.path.isfile(args.resume):
-            checkpoint = torch.load(args.resume, map_location='cpu')
-            if 'epoch' in checkpoint:
-                # resuming a train checkpoint w/ epoch and optimizer state
-                start_epoch = checkpoint["epoch"]
-                sd = checkpoint["state_dict"]
-                if not args.distributed and next(iter(sd.items()))[0].startswith('module'):
-                    sd = {k[len('module.'):]: v for k, v in sd.items()}
-                clip_model.load_state_dict(sd)
-                if optimizer is not None:
-                    optimizer.load_state_dict(checkpoint["optimizer"])
-                if scaler is not None and 'scaler' in checkpoint:
-                    scaler.load_state_dict(checkpoint['scaler'])
-                logging.info(f"=> resuming checkpoint '{args.resume}' (epoch {start_epoch})")
-            else:
-                # loading a bare (model only) checkpoint for fine-tune or evaluation
-                clip_model.load_state_dict(checkpoint)
-                logging.info(f"=> loaded checkpoint '{args.resume}' (epoch {start_epoch})")
-        else:
-            logging.info("=> no checkpoint found at '{}'".format(args.resume))
-
-        # nn.Sequential(*list(resnet_model.backbone.children())[:-2])
-    model = CLIPWithRPN(clip_model, rpn_model,backbone,preprocess_train,preprocess_val,train_rpn=True) 
-   
     if is_master(args):
         logging.info("Model:")
         logging.info(f"{str(model)}")
@@ -251,6 +164,9 @@ def main():
                 val = getattr(args, name)
                 logging.info(f"  {name}: {val}")
                 f.write(f"{name}: {val}\n")
+
+    
+
     
     if args.distributed and not args.horovod:
         if args.use_bn_sync:
@@ -261,6 +177,9 @@ def main():
             ddp_args['static_graph'] = True
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[device], **ddp_args)
 
+    
+    
+    
     
     # create optimizer and scaler
     optimizer = None
@@ -290,6 +209,31 @@ def main():
             hvd.broadcast_optimizer_state(optimizer, root_rank=0)
 
         scaler = GradScaler() if args.precision == "amp" else None
+
+    # optionally resume from a checkpoint
+    start_epoch = 0
+    if args.resume is not None:
+        if os.path.isfile(args.resume):
+            checkpoint = torch.load(args.resume, map_location='cpu')
+            if 'epoch' in checkpoint:
+                # resuming a train checkpoint w/ epoch and optimizer state
+                start_epoch = checkpoint["epoch"]
+                sd = checkpoint["state_dict"]
+                if not args.distributed and next(iter(sd.items()))[0].startswith('module'):
+                    sd = {k[len('module.'):]: v for k, v in sd.items()}
+                model.load_state_dict(sd)
+                if optimizer is not None:
+                    optimizer.load_state_dict(checkpoint["optimizer"])
+                if scaler is not None and 'scaler' in checkpoint:
+                    scaler.load_state_dict(checkpoint['scaler'])
+                logging.info(f"=> resuming checkpoint '{args.resume}' (epoch {start_epoch})")
+            else:
+                # loading a bare (model only) checkpoint for fine-tune or evaluation
+                model.load_state_dict(checkpoint)
+                logging.info(f"=> loaded checkpoint '{args.resume}' (epoch {start_epoch})")
+        else:
+            logging.info("=> no checkpoint found at '{}'".format(args.resume))
+
     # initialize datasets
     data = get_data(args, (preprocess_train, preprocess_val), epoch=start_epoch)
     assert len(data), 'At least one train or eval dataset must be specified.'
@@ -334,22 +278,19 @@ def main():
         if is_master(args):
             logging.info(f'Start epoch {epoch}')
 
-        train_one_epoch_RPNClipN(model, data, epoch, optimizer, scaler, scheduler, args, writer)
+        train_one_epoch_ClipOnly(model, data, epoch, optimizer, scaler, scheduler, args, writer)
         completed_epoch = epoch + 1
 
         if any(v in data for v in ('val', 'imagenet-val', 'imagenet-v2')):
-            evaluate(model, data, completed_epoch, args, writer)
+            evaluate(model.clip_model, data, completed_epoch, args, writer)
 
         # Saving checkpoints.
-        if args.save_logs:
+        if args.save_logs :
             checkpoint_dict = {
                 "epoch": completed_epoch,
                 "name": args.name,
-                "state_dict": model.module.clip_model.state_dict(),
+                "state_dict": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
-                "rpn_state_dict":model.module.rpn.state_dict(),
-                
-                
             }
             if scaler is not None:
                 checkpoint_dict["scaler"] = scaler.state_dict()
