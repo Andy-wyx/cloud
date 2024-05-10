@@ -8,11 +8,10 @@
 <img src="https://img.shields.io/badge/%F0%9F%93%96-Report-red.svg?style=flat-square">
 </a>
 
-<a src="https://img.shields.io/badge/%F0%9F%8E%A4-Slides-blue.svg?style=flat-square
-" href="https://brown365-my.sharepoint.com/:p:/g/personal/xma75_ad_brown_edu/EWl8KQBX871LmJq8Lz6NoHMBC3KXe2If3L-jqN38WdxD0w?e=iYzHeW&nav=eyJzSWQiOjI1N30">
-<img src="https://img.shields.io/badge/%F0%9F%8E%A4-Slides-blue.svg?style=flat-square
-">
+<a src="https://img.shields.io/badge/%F0%9F%8E%A4-Slides-blue.svg?style=flat-square" href="https://brown365-my.sharepoint.com/:p:/g/personal/xma75_ad_brown_edu/EWl8KQBX871LmJq8Lz6NoHMBC3KXe2If3L-jqN38WdxD0w?e=iYzHeW&nav=eyJzSWQiOjI1N30">
+<img src="https://img.shields.io/badge/%F0%9F%8E%A4-Slides-blue.svg?style=flat-square">
 </a>
+
 </div>
 
 <p align="center">
