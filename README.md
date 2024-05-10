@@ -5,12 +5,12 @@
 **Group members: Kangyu Zhu, Yingwei Song, Xueru Ma, Yuxiang Wang**
 
 <p align="center">
-  <img src="imgs/output1.jpeg" width=600><br/>
+  <img src="imgs/main_diagram.jpeg" width=800><br/>
 </p>
 
-<p align="center">
+<!-- <p align="center">
   <img src="imgs/output3.png" width=600><br/>
-</p>
+</p> -->
 
 ## Introduction
 
