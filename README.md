@@ -65,6 +65,29 @@ Side notes:
 - val2017 is suitable for finetuning CLOUD with the feature distance loss. It is also faster for lightweight playing around.
 - if you also want to try traditional OOD datasets e.g. iNaturalist, Textures, Places, SUN. See download instructions [here](https://github.com/deeplearning-wisc/large_scale_ood#out-of-distribution-dataset)
 
+## :key:Pretrain & Inference
+Pretrain by:
+```shell
+cd src
+sh run.sh
+```
+
+You may need to adjust the parameters to fed in necessary parameters corresponding to the training you intend to conduct and the number of GPU devices you're using.
+
+Inference (OOD detection network only) by:
+```shell
+cd src
+python zero_shot_infer.py
+```
+
+Inference (CLOUD) by:
+```shell
+cd src
+python zero_shot_infer_cloud.py
+```
+
+After these steps, the [./logs](./logs) folder will provide you with model checkpoints, inference results in csv and JSON file for further visualization.
+
 ## :star:Visualization
 <p align="center">
   <img src="imgs/vis1_ood.png" width=400>
