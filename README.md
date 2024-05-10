@@ -89,7 +89,7 @@ python zero_shot_infer_cloud.py
 After these steps, the [./logs](./logs) folder will provide you with model checkpoints, inference results in csv and JSON file for further visualization.
 
 ## :star:Visualization
-The main implementation of the visulizer is based on the detectron2 - we parse the json file first then visualize it.
+The main implementation of the visualizer is based on the detectron2 - we parse the json file first then visualize it.
 <p align="center">
   <img src="imgs/vis1_ood.png" width=400>
   <img src="imgs/vis2_ood.png" width=400><br/>
