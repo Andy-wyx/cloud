@@ -45,20 +45,31 @@ torch and cudatoolkit version may depend on your GPU Driver version. Refer to [t
 
 
 ## Prepare Dataset
+* Step1: download coco dataset from [here](https://cocodataset.org/#download)
+The expected structure is:
+```
+$coco/
+  annotations/
+  train2017/
+  val2017
+```
+* Step2:Then run the python script to generate our dataset:
+```shell
+cd src/preprocess
+python data_gen.py
+```
+* Step3: redefine dataset details in [./src/tuning_util.py](./src/tuning_util.py)
 
-
-## Ablation Experiments
-Results: [ablation_results](https://drive.google.com/drive/folders/1dfPbZx8CwcK3-M88zTtgnMVG9VbzIrAW)
-* Transform
-* Loss
-* Training strategy
-
-## Training Results
+Side notes:
+- train2017 is better for region-text matching
+- val2017 is suitable for finetuning CLOUD with the feature distance loss. It is also faster for lightweight playing around.
+- if you also want to try traditional OOD dataset e.g. iNaturalist, Textures, Places, SUN. See download instructions [here](https://github.com/deeplearning-wisc/large_scale_ood#out-of-distribution-dataset)
 
 ## Visualization
 
-## Future Work
 
+## Results & Future Work 
+Refer to our [report](https://docs.google.com/document/d/1k0BcnrnMjDZfE_vwAiLpe5KyqjaywVXNd_452LeZfjM/edit?usp=sharing)
 
 **Acknowledge**
 * [xmed-lab/CLIPN](https://github.com/xmed-lab/CLIPN)
