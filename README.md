@@ -67,8 +67,8 @@ Side notes:
 
 ## :star:Visualization
 <p align="center">
-  <img src="vis1_ood.png" width=400>
-  <img src="vis2_ood.png" width=400><br/>
+  <img src="imgs/vis1_ood.png" width=400>
+  <img src="imgs/vis2_ood.png" width=400><br/>
 </p>
 
 
